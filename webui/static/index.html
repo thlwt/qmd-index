@@ -1,0 +1,2176 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QMD Index — Knowledge Search</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Noto+Sans+SC:wght@300;400;500;700&family=Noto+Sans+JP:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<script src="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.6/dist/vis-network.min.js"></script>
+<style>
+:root {
+  --bg-primary:#F2EFE8;--bg-secondary:#FAF8F5;--bg-tertiary:#EAE6DF;
+  --text-primary:#1C1A18;--text-secondary:#8A857F;--text-tertiary:#B5B0A8;
+  --accent:#7B6B5A;--accent-hover:#6A5B4C;--accent-light:rgba(123,107,90,.1);
+  --border:rgba(0,0,0,.05);
+  --shadow-sm:0 1px 2px rgba(0,0,0,.04),0 1px 3px rgba(0,0,0,.03);
+  --shadow-md:0 4px 10px rgba(0,0,0,.05),0 2px 4px rgba(0,0,0,.03);
+  --shadow-lg:0 10px 30px rgba(0,0,0,.06),0 4px 10px rgba(0,0,0,.03);
+  --glass-bg:rgba(250,248,245,.78);--glass-border:rgba(250,248,245,.3);
+  --code-bg:#EEECE7;--success:#5B8C5A;--warning:#C4905A;--error:#C45A5A;
+  --radius-sm:8px;--radius-md:14px;--radius-lg:20px;
+  --transition:all .25s cubic-bezier(.4,0,.2,1);
+}
+[data-theme="dark"]{
+  --bg-primary:#181714;--bg-secondary:#252320;--bg-tertiary:#32302C;
+  --text-primary:#EDE9E3;--text-secondary:#9E9890;--text-tertiary:#6B665F;
+  --accent:#A89888;--accent-hover:#B5A89A;--accent-light:rgba(168,152,136,.1);
+  --border:rgba(255,255,255,.06);--shadow-sm:0 1px 2px rgba(0,0,0,.15);
+  --shadow-md:0 4px 10px rgba(0,0,0,.2);--shadow-lg:0 10px 30px rgba(0,0,0,.25);
+  --glass-bg:rgba(37,35,32,.78);--glass-border:rgba(255,255,255,.04);--code-bg:#32302C;
+}
+[data-theme="light"]{--bg-accent-warm:linear-gradient(135deg,rgba(123,107,90,.02),rgba(123,107,90,.05))}
+[data-theme="dark"]{--bg-accent-warm:linear-gradient(135deg,rgba(168,152,136,.03),rgba(168,152,136,.07))}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter','Noto Sans SC','Noto Sans JP',-apple-system,BlinkMacSystemFont,sans-serif;background:var(--bg-primary);color:var(--text-primary);line-height:1.6;min-height:100vh;transition:var(--transition);overflow-x:hidden}
+.app-container{display:grid;grid-template-columns:240px 1fr;grid-template-rows:auto 1fr;min-height:100vh}
+.top-bar{grid-column:1/-1;background:var(--glass-bg);backdrop-filter:blur(20px) saturate(180%);-webkit-backdrop-filter:blur(20px) saturate(180%);border-bottom:1px solid var(--border);padding:0 32px;height:56px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
+.top-bar-brand{display:flex;align-items:center;gap:12px}
+.brand-icon{width:32px;height:32px;border-radius:var(--radius-sm);background:linear-gradient(135deg,#7B6B5A,#A89888);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600;font-size:14px}
+.brand-title{font-size:16px;font-weight:600;letter-spacing:-.3px}
+.brand-version{font-size:11px;color:var(--text-tertiary);padding:2px 8px;background:var(--bg-tertiary);border-radius:12px;margin-left:-4px}
+.top-bar-controls{display:flex;align-items:center;gap:8px}
+.ctrl-btn{width:36px;height:36px;border-radius:var(--radius-sm);border:none;background:transparent;color:var(--text-secondary);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:var(--transition);font-size:16px}
+.ctrl-btn:hover{background:var(--bg-tertiary);color:var(--text-primary)}
+.sidebar{background:var(--bg-secondary);border-right:1px solid var(--border);padding:24px 0;overflow-y:auto;position:sticky;top:56px;height:calc(100vh - 56px)}
+.sidebar-section{padding:0 16px;margin-bottom:24px}
+.sidebar-label{font-size:11px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.8px;padding:0 8px;margin-bottom:8px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--radius-sm);cursor:pointer;transition:var(--transition);color:var(--text-secondary);font-size:14px;font-weight:400}
+.nav-item:hover{background:var(--bg-tertiary);color:var(--text-primary)}
+.nav-item.active{background:var(--accent-light);color:var(--accent);font-weight:500}
+.nav-icon{width:20px;text-align:center;font-size:16px}
+.nav-badge{margin-left:auto;background:var(--bg-tertiary);color:var(--text-secondary);padding:1px 8px;border-radius:10px;font-size:12px}
+.main-content{padding:32px;overflow-y:auto}
+.page-section{display:none}.page-section.active{display:block;animation:fadeIn .3s ease}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.card{background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;box-shadow:var(--shadow-sm);transition:var(--transition)}
+.search-hero{text-align:center;padding:48px 24px 32px;background:var(--bg-accent-warm);border-radius:var(--radius-lg);margin-bottom:24px}
+.search-hero h1{font-size:32px;font-weight:600;letter-spacing:-.5px;margin-bottom:8px}
+.search-hero p{color:var(--text-secondary);font-size:15px;margin-bottom:24px}
+.search-bar{max-width:640px;margin:0 auto;position:relative}
+.search-input-wrap{display:flex;align-items:center;background:var(--bg-secondary);border:1.5px solid var(--border);border-radius:14px;padding:0 8px 0 20px;box-shadow:var(--shadow-md);transition:var(--transition)}
+.search-input-wrap:focus-within{border-color:var(--accent);box-shadow:var(--shadow-lg),0 0 0 3px var(--accent-light)}
+.search-icon{color:var(--text-tertiary);font-size:18px;margin-right:12px}
+.search-input{flex:1;border:none;background:transparent;padding:14px 0;font-size:16px;color:var(--text-primary);outline:none;font-family:inherit}
+.search-input::placeholder{color:var(--text-tertiary)}
+.search-btn{padding:8px 20px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:500;cursor:pointer;transition:var(--transition)}
+.search-btn:hover{background:var(--accent-hover)}
+.search-options{display:flex;align-items:center;justify-content:center;gap:16px;margin-top:12px}
+.search-opt-label{font-size:13px;color:var(--text-secondary);cursor:pointer;display:flex;align-items:center;gap:4px}
+.search-opt-label input[type="checkbox"]{accent-color:var(--accent)}
+.collection-select{padding:14px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-primary);font-size:14px;cursor:pointer}
+.results-container{margin-top:24px}
+.result-item{padding:20px;border-radius:var(--radius-md);border:1px solid var(--border);background:var(--bg-secondary);margin-bottom:12px;transition:var(--transition);cursor:pointer}
+.result-item:hover{border-color:var(--accent);box-shadow:var(--shadow-sm)}
+.result-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.result-title{font-size:16px;font-weight:500;color:var(--accent)}
+.result-score{font-size:13px;color:var(--text-secondary);padding:2px 10px;background:var(--bg-tertiary);border-radius:12px}
+.result-path{font-size:13px;color:var(--text-tertiary);margin-bottom:8px}
+.result-collection{display:inline-block;font-size:12px;padding:2px 8px;background:var(--accent-light);color:var(--accent);border-radius:6px;margin-right:8px}
+.result-preview{font-size:14px;color:var(--text-secondary);line-height:1.5;max-height:80px;overflow:hidden}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:32px}
+.stat-card{background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius-md);padding:20px;text-align:center}
+.stat-value{font-size:36px;font-weight:700;color:var(--accent);letter-spacing:-1px}
+.stat-label{font-size:13px;color:var(--text-secondary);margin-top:4px}
+.collection-list{display:grid;gap:8px}
+.collection-item{display:flex;align-items:center;padding:14px 16px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius-sm);transition:var(--transition)}
+.collection-item:hover{border-color:var(--accent)}
+.coll-name{flex:1;font-size:14px;font-weight:500}
+.coll-count{background:var(--bg-tertiary);padding:2px 12px;border-radius:12px;font-size:13px;color:var(--text-secondary)}
+.form-group{margin-bottom:16px}
+.form-label{display:block;font-size:14px;font-weight:500;margin-bottom:6px;color:var(--text-primary)}
+.form-input,.form-textarea{width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-primary);color:var(--text-primary);font-size:14px;transition:var(--transition);font-family:inherit}
+.form-input:focus,.form-textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-light)}
+.form-textarea{min-height:100px;resize:vertical}
+.btn{padding:10px 20px;border-radius:var(--radius-sm);border:none;font-size:14px;font-weight:500;cursor:pointer;transition:var(--transition);font-family:inherit}
+.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{background:var(--accent-hover)}
+.btn-secondary{background:var(--bg-tertiary);color:var(--text-primary)}.btn-danger{background:var(--error);color:#fff}
+.toast-container{position:fixed;top:72px;right:32px;z-index:1000;display:flex;flex-direction:column;gap:8px}
+.toast{padding:14px 20px;border-radius:var(--radius-sm);background:var(--bg-secondary);border:1px solid var(--border);box-shadow:var(--shadow-lg);font-size:14px;animation:slideIn .3s ease;max-width:360px}
+.toast.success{border-left:3px solid var(--success)}.toast.error{border-left:3px solid var(--error)}.toast.info{border-left:3px solid var(--accent)}
+@keyframes slideIn{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:translateX(0)}}
+.spinner{display:inline-block;width:20px;height:20px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:200;align-items:center;justify-content:center;padding:32px 16px}
+.modal-overlay.show{display:flex}
+.modal-box{background:var(--bg-secondary);border-radius:var(--radius-lg);padding:32px;max-width:800px;width:100%;max-height:85vh;display:flex;flex-direction:column;box-shadow:var(--shadow-lg)}
+.modal-body{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden}
+.modal-body .doc-detail-content{flex:1;min-height:0;overflow-y:auto;overflow-x:auto}
+.modal-body .CodeMirror{flex:1;min-height:0}
+.modal-box.split{max-width:1400px!important;}
+.pane{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden;}
+.pane-header{font-size:13px;font-weight:600;padding:4px 0 8px;color:var(--text-secondary);border-bottom:1px solid var(--border);margin-bottom:8px;cursor:pointer;flex-shrink:0;}
+.pane-header:hover{color:var(--accent);}
+.pane-divider{width:4px;cursor:col-resize;background:var(--border);border-radius:2px;margin:0 8px;flex-shrink:0;}
+.pane-divider:hover{background:var(--accent);}
+.pane-placeholder{display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-tertiary);font-size:14px;text-align:center;padding:40px;}
+.empty-state{text-align:center;padding:48px 24px;color:var(--text-tertiary)}
+.empty-icon{font-size:48px;margin-bottom:16px;opacity:.5}
+.lang-dropdown{position:relative}
+.lang-menu{display:none;position:absolute;top:44px;right:0;background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:var(--shadow-lg);min-width:160px;z-index:50}
+.lang-menu.show{display:block}
+.lang-option{padding:8px 14px;cursor:pointer;font-size:13px;transition:var(--transition)}
+.lang-option:hover{background:var(--bg-tertiary)}.lang-option.active-lang{color:var(--accent);font-weight:600}
+.doc-detail-content{font-size:14px;line-height:1.7;color:var(--text-primary);white-space:pre-wrap}
+/* EasyMDE theme match */
+.CodeMirror{-webkit-box-flex:1;-webkit-flex:1;flex:1;min-height:0;background:var(--bg-primary);color:var(--text-primary);font-size:14px;line-height:1.7}
+.CodeMirror-scroll{overflow:hidden!important;padding-bottom:0!important;margin-bottom:0!important;position:relative}
+.CodeMirror-sizer{border-right:0}
+.CodeMirror-vscrollbar,.CodeMirror-hscrollbar{display:block!important;opacity:1!important;z-index:10!important;height:auto!important;width:auto!important}
+.CodeMirror-vscrollbar{overflow-y:scroll!important;overflow-x:hidden!important;right:0!important;top:0!important;bottom:0!important}
+.CodeMirror-hscrollbar{overflow-x:scroll!important;overflow-y:hidden!important;left:0!important;right:0!important;bottom:0!important}
+.CodeMirror-cursor{border-color:var(--text-primary)}
+.CodeMirror-focused .CodeMirror-selected{background:var(--accent-light)}
+.editor-toolbar{background:#3A3A3C;border-color:rgba(255,255,255,.08);border-radius:var(--radius-sm) var(--radius-sm) 0 0;opacity:1}
+.editor-toolbar:before,.editor-toolbar:after{display:none}
+.editor-toolbar button{color:#fff!important;fill:#fff!important;opacity:.85;text-shadow:none}
+.editor-toolbar button svg,.editor-toolbar button svg *{fill:#fff!important;stroke:none!important;width:14px;height:14px}
+.editor-toolbar button:hover{background:rgba(255,255,255,.12);color:#fff!important;fill:#fff!important;opacity:1}
+.editor-toolbar button:hover svg,.editor-toolbar button:hover svg *{fill:#fff!important}
+.editor-toolbar button.active{background:rgba(255,255,255,.15);color:#fff!important;fill:#fff!important;opacity:1}
+.editor-toolbar button.active svg,.editor-toolbar button.active svg *{fill:#fff!important}
+.editor-toolbar button i.separator{border-color:rgba(255,255,255,.12)}
+.editor-toolbar button:before{color:#fff!important}
+.editor-toolbar button > *{color:#fff!important;fill:#fff!important}
+.CodeMirror-gutters{background:var(--bg-tertiary);border-color:var(--border)}
+.CodeMirror-linenumber{color:var(--text-tertiary)}
+.editor-preview{background:var(--bg-secondary);color:var(--text-primary)}
+.editor-preview-side{background:var(--bg-secondary);color:var(--text-primary);border-color:var(--border)}
+.editor-statusbar{color:var(--text-tertiary)}
+/* EasyMDE fullscreen — preserve colors */
+.CodeMirror-fullscreen{background:var(--bg-primary)!important;color:var(--text-primary)!important;z-index:9999!important;height:100vh!important}
+.CodeMirror-fullscreen .CodeMirror-scroll{overflow:hidden!important}
+.CodeMirror-fullscreen .CodeMirror-vscrollbar{overflow-y:scroll!important}
+.CodeMirror-fullscreen .CodeMirror-hscrollbar{overflow-x:scroll!important}
+.CodeMirror-fullscreen .CodeMirror pre,.CodeMirror-fullscreen .CodeMirror-lines,
+.CodeMirror-fullscreen .CodeMirror-line,.CodeMirror-fullscreen .CodeMirror-line span{background:transparent!important;color:var(--text-primary)!important}
+.CodeMirror-fullscreen .CodeMirror-cursor{border-color:var(--text-primary)!important}
+.CodeMirror-fullscreen .CodeMirror-selected{background:var(--accent-light)!important}
+.CodeMirror-fullscreen .CodeMirror-gutters{background:var(--bg-tertiary)!important;border-color:var(--border)!important}
+.CodeMirror-fullscreen .CodeMirror-linenumber{color:var(--text-tertiary)!important}
+.editor-toolbar.fullscreen{background:#3A3A3C!important}
+.editor-toolbar.fullscreen button{color:#fff!important;fill:#fff!important}
+/* ========== Mode Pills ========== */
+.mode-pill{padding:8px 20px;border-radius:20px;border:1.5px solid var(--border);background:var(--bg-secondary);color:var(--text-secondary);cursor:pointer;font-size:14px;font-weight:400;display:flex;align-items:center;justify-content:center;gap:6px;flex:1;transition:var(--transition);font-family:inherit}
+.mode-pill:hover{border-color:var(--accent);color:var(--text-primary)}
+.mode-pill.active{background:var(--accent-light);border-color:var(--accent);color:var(--accent);font-weight:500}
+.mode-icon{font-size:16px}
+/* ========== Win11-style File Picker ========== */
+.file-picker-area{border:2px dashed var(--border);border-radius:var(--radius-md);padding:32px;text-align:center;transition:var(--transition)}
+.file-picker-area:hover,.file-picker-area.dragover{border-color:var(--accent);background:var(--accent-light)}
+.picker-toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:center}
+.picker-toolbar .btn{font-size:13px;padding:8px 16px}
+.file-list{max-height:240px;overflow-y:auto;margin-top:12px}
+.file-row{display:flex;align-items:center;padding:6px 10px;border-radius:6px;font-size:13px;color:var(--text-secondary);transition:var(--transition)}
+.file-row:hover{background:var(--bg-tertiary)}
+.file-icon{margin-right:8px;font-size:14px;width:20px;text-align:center}
+.file-name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-primary)}
+.file-size{font-size:12px;margin-left:8px;color:var(--text-tertiary);min-width:50px;text-align:right}
+.file-remove{cursor:pointer;color:var(--text-tertiary);margin-left:8px;padding:2px 6px;border-radius:4px;font-size:16px;line-height:1;transition:var(--transition)}
+.file-remove:hover{color:var(--error);background:rgba(255,59,48,.08)}
+.empty-file-list{text-align:center;color:var(--text-tertiary);padding:16px;font-size:13px}
+.doc-row{display:flex;align-items:center;padding:10px 14px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-secondary);margin-bottom:8px;transition:var(--transition)}
+.doc-row:hover{border-color:var(--accent)}
+.doc-row-title{flex:1;font-size:14px;font-weight:500;color:var(--text-primary);cursor:pointer}
+.doc-row-title:hover{color:var(--accent)}
+.doc-row-path{font-size:12px;color:var(--text-tertiary);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:300px}
+.doc-row-actions{display:flex;gap:6px;margin-left:12px}
+.doc-row-btn{padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-secondary);cursor:pointer;font-size:12px;transition:var(--transition)}
+.doc-row-btn:hover{border-color:var(--accent);color:var(--accent)}.doc-row-btn.remove:hover{border-color:var(--error);color:var(--error);background:rgba(255,59,48,.06)}
+.pagination-wrap{display:flex;align-items:center;justify-content:center;gap:12px;margin-top:20px;padding:12px}
+.pagination-btn{padding:6px 16px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-primary);cursor:pointer;font-size:13px;transition:var(--transition)}
+.pagination-btn:hover:not(:disabled){border-color:var(--accent);background:var(--accent-light)}.pagination-btn:disabled{opacity:.4;cursor:not-allowed}
+.pagination-info{font-size:13px;color:var(--text-secondary);min-width:80px;text-align:center}
+::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--text-tertiary);border-radius:3px}
+.graph-container{width:100%;height:calc(100vh - 200px);min-height:400px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--bg-secondary);overflow:hidden}
+.graph-toolbar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
+.graph-legend{padding:12px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius-md);font-size:12px;max-height:calc(100vh - 200px);overflow-y:auto}
+.graph-legend h4{font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-secondary)}
+.graph-legend-item{display:flex;align-items:center;gap:6px;padding:3px 0;cursor:pointer}
+.graph-legend-color{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.graph-legend-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-primary)}
+.graph-node-info{padding:12px 16px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius-md);margin-top:12px;font-size:13px}
+.graph-node-info h4{font-size:14px;font-weight:600;margin-bottom:6px}
+.graph-node-info .info-row{display:flex;gap:8px;padding:2px 0;color:var(--text-secondary)}
+.graph-node-info .info-row span:first-child{min-width:80px;color:var(--text-tertiary)}
+.graph-node-info .info-actions{display:flex;gap:8px;margin-top:8px}
+.backlinks-panel{margin-top:16px;padding:12px 16px;background:var(--bg-tertiary);border-radius:var(--radius-sm);font-size:13px}
+.backlinks-panel h4{font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-secondary)}
+.backlink-item{padding:4px 0;cursor:pointer;color:var(--accent);transition:var(--transition)}
+.backlink-item:hover{color:var(--accent-hover);text-decoration:underline}
+.outgoing-link{color:var(--text-secondary);font-size:13px;padding:2px 0}
+.outgoing-link .unresolved{color:var(--text-tertiary);font-style:italic}
+.tag-pill{display:inline-block;font-size:11px;padding:1px 8px;border-radius:10px;background:var(--accent-light);color:var(--accent);margin:2px 4px 2px 0;cursor:pointer;transition:var(--transition)}
+.tag-pill:hover{background:var(--accent);color:#fff}
+.tag-pill.active{background:var(--accent);color:#fff}
+.tag-pill-sm{font-size:10px;padding:0 6px;border-radius:8px}
+.tag-cloud{padding:8px;display:flex;flex-wrap:wrap;gap:4px}
+.tag-section{margin-bottom:16px;padding:0 8px}
+.tag-section .tag-label{font-size:11px;font-weight:600;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px}
+@media(max-width:768px){.app-container{grid-template-columns:1fr}.sidebar{display:none}.main-content{padding:16px}}
+</style>
+</head>
+<body>
+<div class="toast-container" id="toastContainer"></div>
+<div class="app-container">
+  <header class="top-bar">
+    <div class="top-bar-brand">
+      <div class="brand-icon">Q</div>
+      <span class="brand-title" data-i18n="brand_title">QMD Index</span>
+      <span class="brand-version" id="versionBadge">v3.6</span>
+    </div>
+    <div class="top-bar-controls">
+      <div class="lang-dropdown">
+        <button class="ctrl-btn" id="langBtn" data-i18n-title="btn_language" title="Language">🌐</button>
+        <div class="lang-menu" id="langMenu"></div>
+      </div>
+      <button class="ctrl-btn" id="themeBtn" data-i18n-title="btn_theme" title="Toggle Theme">🌙</button>
+      <button class="ctrl-btn" id="upgradeBtn" data-i18n-title="btn_upgrade" title="Upgrade">⬆️</button>
+    </div>
+  </header>
+  <nav class="sidebar">
+   <div class="sidebar-section">
+      <div class="sidebar-label" data-i18n="nav_search">Search</div>
+      <div class="nav-item active" data-page="search"><span class="nav-icon">🔍</span><span data-i18n="nav_keyword">Search</span></div>
+      <div class="nav-item" data-page="graph"><span class="nav-icon">🕸️</span><span data-i18n="nav_graph">Graph</span></div>
+    </div>
+   <div class="sidebar-section">
+      <div class="sidebar-label" data-i18n="nav_manage">Manage</div>
+      <div class="nav-item active" data-page="browse"><span class="nav-icon">📂</span><span data-i18n="nav_browse">Browse</span><span class="nav-badge" id="collCountBadge">0</span></div>
+      <div class="nav-item" data-page="add-docs"><span class="nav-icon">➕</span><span data-i18n="nav_add_docs">Add Documents</span></div>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-label" data-i18n="nav_tools">Tools</div>
+      <div class="nav-item" data-page="expand"><span class="nav-icon">💡</span><span data-i18n="nav_expand">Query Expand</span></div>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-label" data-i18n="nav_system">System</div>
+      <div class="nav-item" data-page="stats"><span class="nav-icon">📊</span><span data-i18n="nav_stats">Statistics</span></div>
+      <div class="nav-item" data-page="optimize"><span class="nav-icon">⚙️</span><span data-i18n="nav_optimize">Optimize</span></div>
+      <div class="nav-item" data-page="settings"><span class="nav-icon">🔧</span><span data-i18n="nav_settings">Settings</span></div>
+    </div>
+  </nav>
+  <main class="main-content">
+   <!-- UNIFIED SEARCH -->
+    <section class="page-section active" id="page-search">
+      <div class="search-hero">
+        <h1 data-i18n="hero_title">Search Your Knowledge Base</h1>
+        <p data-i18n="unified_hero_subtitle">One search box, three modes — pick the approach that fits your question.</p>
+        <!-- Mode selector pills -->
+        <div class="search-mode-pills" style="display:flex;gap:8px;margin-bottom:20px;max-width:640px;margin-left:auto;margin-right:auto;">
+          <button class="mode-pill active" data-mode="keyword" onclick="switchSearchMode('keyword')">
+            <span class="mode-icon">🔍</span> <span data-i18n="nav_keyword">Search</span>
+          </button>
+          <button class="mode-pill" data-mode="semantic" onclick="switchSearchMode('semantic')">
+            <span class="mode-icon">🧠</span> <span data-i18n="nav_semantic">Semantic Search</span>
+          </button>
+          <button class="mode-pill" data-mode="hybrid" onclick="switchSearchMode('hybrid')">
+            <span class="mode-icon">⚡</span> <span data-i18n="nav_hybrid">Hybrid Search</span>
+          </button>
+        </div>
+        <!-- Search input -->
+        <div class="search-bar">
+          <div class="search-input-wrap">
+            <span class="search-icon" id="modeSearchIcon">🔍</span>
+            <input type="text" class="search-input" id="unifiedSearchInput" data-i18n-placeholder="hero_placeholder" placeholder='Search for anything...'>
+            <button class="search-btn" id="unifiedSearchBtn" data-i18n="btn_search">Search</button>
+          </div>
+          <!-- Optional intent field (hybrid mode only) -->
+          <div class="intent-field" id="intentField" style="display:none;margin-top:12px;max-width:640px;margin-left:auto;margin-right:auto;">
+            <input type="text" class="form-input" id="unifiedIntentInput" data-i18n-placeholder="hybrid_intent_placeholder" placeholder='Describe your search goal or background (optional)...' style="width:100%;padding:10px 14px;border-radius:var(--radius-sm);border:1.5px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-size:14px;">
+          </div>
+          <!-- Collection filter -->
+          <div style="margin-top:12px;display:flex;justify-content:flex-end;">
+            <select class="collection-select" id="collFilterUnified"><option value="" data-i18n="opt_all_collections">All Collections</option></select>
+          </div>
+        </div>
+      </div>
+      <!-- Results -->
+      <div style="display:flex;justify-content:center;margin-bottom:8px;">
+        <span id="searchModeLabel" style="font-size:13px;color:var(--text-secondary);"></span>
+      </div>
+      <div class="results-container" id="unifiedSearchResults"></div>
+    </section>
+   <!-- BROWSE — Folder/File Tree View -->
+    <section class="page-section" id="page-browse">
+      <div style="display:flex;gap:24px;height:calc(100vh - 160px);min-height:500px;">
+        <!-- Left sidebar: folder tree (collections) + tags -->
+        <div style="width:280px;flex-shrink:0;display:flex;flex-direction:column;">
+          <h3 style="font-size:14px;font-weight:600;margin-bottom:12px;color:var(--text-secondary);" data-i18n="browse_folders">Folders</h3>
+          <div id="folderTree" class="card" style="flex:1;overflow-y:auto;padding:8px;">
+            <div class="empty-state"><span class="spinner"></span></div>
+          </div>
+          <div class="tag-section" style="margin-top:12px;">
+            <div class="tag-label">🏷️ <span data-i18n="tag_label">Tags</span> <span id="tagCount" style="font-weight:400;color:var(--text-tertiary)"></span></div>
+            <div id="tagCloud" class="tag-cloud"></div>
+          </div>
+        </div>
+        <!-- Right main area: file list (documents) -->
+        <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+          <div id="browseHeader" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+            <h3 id="browseTitle" style="font-size:16px;font-weight:600;" data-i18n="browse_all_title">All Collections</h3>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <button class="btn btn-secondary" id="scanTagsBtn" style="font-size:11px;padding:4px 10px;" title="Scan YAML frontmatter for tags">🏷️ <span data-i18n="scan_tags">Scan Tags</span></button>
+              <input type="text" class="form-input" id="browseSearchInput" placeholder="Filter files..." style="width:200px;padding:6px 12px;font-size:13px;" data-i18n-placeholder="browse_filter_placeholder">
+            </div>
+          </div>
+          <div id="fileListArea" class="card" style="flex:1;overflow-y:auto;padding:16px;">
+            <div class="empty-state"><p data-i18n="browse_select_msg">Select a folder to view its files</p></div>
+          </div>
+        </div>
+      </div>
+    </section>
+    <!-- GRAPH VIEW -->
+    <section class="page-section" id="page-graph">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px;">
+        <h2 style="font-size:18px;font-weight:600;" data-i18n="graph_title">Knowledge Graph</h2>
+        <div class="graph-toolbar">
+          <input type="text" id="graphSearchInput" placeholder="Search nodes..." style="padding:4px 10px;font-size:13px;border:1px solid var(--border);border-radius:4px;background:var(--bg-primary);color:var(--text-primary);width:180px;">
+          <button class="btn btn-secondary" id="graphSearchBtn" style="font-size:13px;padding:4px 10px;">🔍</button>
+          <button class="btn btn-secondary" id="graphResetBtn" style="font-size:13px;padding:4px 10px;display:none;">✕ Reset</button>
+          <button class="btn btn-secondary" id="scanLinksBtn" style="font-size:13px;padding:6px 14px;">🔍 <span data-i18n="graph_scan">Scan Links</span></button>
+          <button class="btn btn-secondary" id="refreshGraphBtn" style="font-size:13px;padding:6px 14px;">🔄 <span data-i18n="graph_refresh">Refresh</span></button>
+          <span id="graphStats" style="font-size:13px;color:var(--text-secondary);"></span>
+          <select id="graphModeSelect" style="font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;background:var(--bg-primary);color:var(--text-primary);">
+            <option value="all">All edges</option>
+            <option value="wiki">Wiki + Tags</option>
+            <option value="collection">By Collection</option>
+          </select>
+          <button class="btn btn-secondary" id="graphDetailToggle" style="font-size:12px;padding:3px 8px;display:none;" title="Show individual document nodes">📂 Expand</button>
+        </div>
+      </div>
+      <p style="color:var(--text-secondary);margin-bottom:16px;font-size:14px;" data-i18n="graph_subtitle">Visualize connections between documents via [[wiki links]], shared tags, or collection membership.</p>
+      <div style="display:flex;gap:16px;">
+        <div style="flex:1;">
+          <div id="graphContainer" class="graph-container">
+            <div class="empty-state" style="padding:80px 24px;">
+              <div class="empty-icon">🕸️</div>
+              <p data-i18n="graph_click_refresh">Click "Scan Links" to build the graph, then "Refresh" to view it.</p>
+            </div>
+          </div>
+          <!-- Node info panel -->
+          <div id="graphNodeInfo" class="graph-node-info" style="display:none;"></div>
+        </div>
+        <!-- Legend sidebar -->
+        <div id="graphLegend" class="graph-legend" style="display:none;min-width:200px;max-width:260px;"></div>
+      </div>
+    </section>
+    <!-- ADD DOCS -->
+    <section class="page-section" id="page-add-docs">
+      <h2 style="margin-bottom:8px;" data-i18n="add_title">Add Documents</h2>
+      <p style="color:var(--text-secondary);margin-bottom:24px;font-size:14px;" data-i18n="add_subtitle">Select files or folders to index — drag & drop, click to browse, or paste paths.</p>
+      <div class="card" style="max-width:700px;">
+        <!-- Win11-style file picker -->
+        <div id="filePickerArea" class="file-picker-area">
+          <input type="file" id="fileInput" multiple webkitdirectory directory style="display:none">
+          <div class="picker-toolbar">
+            <button class="btn btn-secondary" id="pickFilesBtn" data-i18n="add_pick_files">📄 Pick Files</button>
+            <button class="btn btn-secondary" id="pickFolderBtn" data-i18n="add_pick_folder">📁 Pick Folder</button>
+            <span style="color:var(--text-tertiary);font-size:12px;" data-i18n="add_or_label">— or —</span>
+            <input type="text" class="form-input" id="pastePathsInput" data-i18n-placeholder="add_path_placeholder" placeholder="Paste paths separated by commas or newlines" style="flex:1;min-width:160px;">
+          </div>
+        </div>
+        <!-- Selected files list (Win11-style compact rows) -->
+        <div id="selectedFilesList" class="file-list"></div>
+        <!-- Collection selector -->
+          <div style="display:flex;gap:12px;margin-top:16px;">
+          <div style="flex:1;" class="form-group">
+            <label class="form-label" data-i18n="add_coll_label">Collection Name</label>
+            <input type="text" class="form-input" id="addCollName">
+          </div>
+          <div style="display:flex;align-items:flex-end;gap:12px;padding-bottom:4px;">
+            <label class="search-opt-label"><input type="checkbox" id="addRecursive"> <span data-i18n="add_recursive_label">Recursive</span></label>
+            <label class="search-opt-label"><input type="checkbox" id="addAutoEmbed" checked> <span data-i18n="add_embed_label" title="Generate vector embeddings after adding">🧠 Embed</span></label>
+          </div>
+        </div>
+        <!-- Context description -->
+        <div class="form-group" style="margin-top:16px;">
+          <label class="form-label" data-i18n="ctx_desc_label">Context Description</label>
+          <textarea class="form-textarea" id="addCtxDesc" data-i18n-placeholder="ctx_desc_placeholder" placeholder="Describe what this collection is about (optional)..." style="min-height:60px;"></textarea>
+        </div>
+        <!-- Upload progress bar -->
+        <div id="addProgressWrap" style="margin-top:16px;display:none;">
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:13px;">
+            <span id="addProgressLabel"></span>
+            <span id="addProgressCount"></span>
+          </div>
+          <div style="height:6px;background:var(--bg-tertiary);border-radius:3px;overflow:hidden;">
+            <div id="addProgressBar" style="height:100%;width:0%;background:var(--accent);transition:width .3s;border-radius:3px;"></div>
+          </div>
+        </div>
+        <!-- Embed progress bar (shown after upload when embed is triggered) -->
+        <div id="embedProgressWrap" style="margin-top:16px;display:none;">
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:13px;">
+            <span id="embedProgressLabel">⏳ Embedding chunks...</span>
+            <span id="embedProgressCount">0 / 0</span>
+          </div>
+          <div style="height:6px;background:var(--bg-tertiary);border-radius:3px;overflow:hidden;">
+            <div id="embedProgressBar" style="height:100%;width:0%;background:var(--accent);transition:width .3s;border-radius:3px;"></div>
+          </div>
+          <div id="embedProgressResult" style="margin-top:8px;font-size:13px;color:var(--text-secondary);"></div>
+        </div>
+        <!-- Add button -->
+        <button class="btn btn-primary" id="addBtn" style="margin-top:20px;" data-i18n="btn_add_index">Add to Index</button>
+      </div>
+      <div id="addResult" style="margin-top:24px;"></div>
+    </section>
+    <!-- EXPAND -->
+    <section class="page-section" id="page-expand">
+      <h2 style="margin-bottom:8px;" data-i18n="expand_title">Query Expansion</h2>
+      <p style="color:var(--text-secondary);margin-bottom:24px;font-size:14px;" data-i18n="expand_subtitle">Expand your query into multiple search types (lex, vec, hyde).</p>
+      <div class="card" style="max-width:600px;">
+        <div class="form-group"><label class="form-label" data-i18n="expand_query_label">Original Query</label><input type="text" class="form-input" id="expandQuery"></div>
+        <div class="form-group"><label class="form-label" data-i18n="expand_intent_label">User Intent (for hyde expansion)</label><input type="text" class="form-input" id="expandIntent"></div>
+        <button class="btn btn-primary" id="expandBtn" data-i18n="btn_expand">Expand & Search</button>
+      </div>
+      <div id="expandResult" style="margin-top:24px;"></div>
+    </section>
+    <!-- STATS -->
+    <section class="page-section" id="page-stats">
+      <h2 style="margin-bottom:8px;" data-i18n="stats_title">Index Statistics</h2>
+      <p style="color:var(--text-secondary);margin-bottom:24px;font-size:14px;" data-i18n="stats_subtitle">Overview of index health and document counts.</p>
+      <div class="stats-grid" id="statsGrid"></div>
+    </section>
+    <!-- OPTIMIZE -->
+    <section class="page-section" id="page-optimize">
+      <h2 style="margin-bottom:8px;" data-i18n="opt_title">Index Optimization</h2>
+      <p style="color:var(--text-secondary);margin-bottom:24px;font-size:14px;" data-i18n="opt_subtitle">Clean orphaned FTS entries and rebuild the index.</p>
+      <div class="card" style="max-width:500px;">
+        <h3 style="margin-bottom:16px;" data-i18n="opt_standard_title">Standard Optimization</h3>
+        <p style="color:var(--text-secondary);font-size:14px;margin-bottom:16px;" data-i18n="opt_standard_desc">Remove orphaned FTS entries and rebuild. Safe, no data loss.</p>
+        <button class="btn btn-primary" id="optStandardBtn" data-i18n="btn_optimize">Run Optimization</button>
+        <hr style="margin:24px 0;border:none;border-top:1px solid var(--border)">
+        <h3 style="margin-bottom:16px;" data-i18n="opt_full_title">Full Cleanup + Vacuum</h3>
+        <p style="color:var(--text-secondary);font-size:14px;margin-bottom:16px;" data-i18n="opt_full_desc">Permanently remove soft-deleted documents and compact DB.</p>
+        <button class="btn btn-danger" id="optFullBtn" data-i18n="btn_vacuum">Run Full Cleanup</button>
+      </div>
+      <div id="optimizeResult" style="margin-top:24px;"></div>
+    </section>
+    <!-- SETTINGS -->
+    <section class="page-section" id="page-settings">
+      <h2 style="margin-bottom:8px;" data-i18n="settings_title">Model Settings</h2>
+      <p style="color:var(--text-secondary);margin-bottom:24px;font-size:14px;" data-i18n="settings_subtitle">Configure the three core models powering the knowledge base.</p>
+      <div id="settingsStatus"></div>
+
+      <!-- Embedding Model -->
+      <div class="card" style="margin-bottom:16px;">
+        <h3 style="margin-bottom:12px;">🧠 <span data-i18n="settings_embed_label">Embedding Model</span></h3>
+        <p style="color:var(--text-secondary);font-size:13px;margin-bottom:16px;" data-i18n="settings_embed_desc">Converts text into vectors for semantic/vector search.</p>
+        <div class="form-group"><label class="form-label" data-i18n="settings_api_url">API URL</label><input class="form-input" id="settingsEmbedUrl" placeholder="http://127.0.0.1:1278/v1/embeddings"></div>
+        <div class="form-group"><label class="form-label" data-i18n="settings_model_name">Model Name</label><input class="form-input" id="settingsEmbedModel" placeholder="Qwen3-Embedding-0.6B"></div>
+        <div class="form-group"><label class="form-label" data-i18n="settings_embed_dim">Vector Dimension</label><input class="form-input" id="settingsEmbedDim" type="number" placeholder="1024"></div>
+      </div>
+
+      <!-- Reranker Model -->
+      <div class="card" style="margin-bottom:16px;">
+        <h3 style="margin-bottom:12px;">📊 <span data-i18n="settings_rerank_label">Reranker Model</span></h3>
+        <p style="color:var(--text-secondary);font-size:13px;margin-bottom:16px;" data-i18n="settings_rerank_desc">Re-ranks search results by relevance for better accuracy.</p>
+        <div class="form-group"><label class="form-label" data-i18n="settings_api_url">API URL</label><input class="form-input" id="settingsRerankUrl" placeholder="http://127.0.0.1:1245/v1/rerank"></div>
+        <div class="form-group"><label class="form-label" data-i18n="settings_model_name">Model Name</label><input class="form-input" id="settingsRerankModel" placeholder="Qwen3-Reranker-0.6B"></div>
+      </div>
+
+      <!-- LLM Model -->
+      <div class="card" style="margin-bottom:16px;">
+        <h3 style="margin-bottom:12px;">🧠 <span data-i18n="settings_llm_label">Brain / LLM</span></h3>
+        <p style="color:var(--text-secondary);font-size:13px;margin-bottom:16px;" data-i18n="settings_llm_desc">Large Language Model for query expansion, summarization, and chat.</p>
+        <div class="form-group"><label class="form-label" data-i18n="settings_api_url">API URL</label><input class="form-input" id="settingsLlmUrl" placeholder="http://localhost:1234/v1"></div>
+        <div class="form-group"><label class="form-label" data-i18n="settings_model_name">Model Name</label><input class="form-input" id="settingsLlmModel" placeholder="Qwen3.6-35B"></div>
+        <div class="form-group"><label class="form-label" data-i18n="settings_api_key">API Key</label><input class="form-input" id="settingsLlmKey" type="password" placeholder="sk-..."></div>
+        <div class="form-group"><label class="form-label" data-i18n="settings_ctx_window">Context Window (tokens)</label><input class="form-input" id="settingsLlmCtx" type="number" placeholder="32768"></div>
+      </div>
+
+      <div style="display:flex;gap:12px;">
+        <button class="btn btn-primary" onclick="saveSettings()" data-i18n="settings_save_btn">Save Settings</button>
+        <button class="btn btn-secondary" onclick="testSettings()" id="settingsTestBtn" data-i18n="settings_test_btn">Test Connections</button>
+      </div>
+      <div id="settingsTestResult" style="margin-top:16px;"></div>
+    </section>
+  </main>
+</div>
+
+<!-- DOC DETAIL MODAL -->
+<div class="modal-overlay" id="docModal">
+  <div class="modal-box" style="max-width:800px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+      <h3 id="modalTitle" style="font-size:18px;font-weight:600;"></h3>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-secondary" id="editDocBtn" onclick="toggleEditDoc()" data-i18n-title="edit_title" title="Edit content" style="display:none;">✏️ <span data-i18n="btn_edit">Edit</span></button>
+        <button class="btn btn-secondary" id="saveDocBtn" onclick="saveDocContent()" data-i18n-title="save_title" title="Save changes" style="display:none;">💾 <span data-i18n="btn_save">Save</span></button>
+        <button class="btn btn-secondary" id="cancelEditBtn" onclick="cancelEditDoc()" data-i18n-title="cancel_title" title="Cancel editing" style="display:none;">✖ <span data-i18n="btn_cancel">Cancel</span></button>
+        <button class="btn btn-secondary" id="splitViewBtn" onclick="toggleSplitView()" data-i18n-title="split_title" title="Split view" style="font-size:13px;padding:6px 12px;">🔄 <span data-i18n="btn_split">Split</span></button>
+        <button class="btn btn-secondary" id="copyDocBtn" onclick="copyDocContent()" data-i18n-title="copy_title" title="Copy content">📋 <span data-i18n="btn_copy">Copy</span></button>
+        <button class="ctrl-btn" onclick="closeDocModal()" style="width:auto;padding:4px 12px;font-size:13px;" data-i18n="btn_close">Close</button>
+      </div>
+    </div>
+    <!-- Doc metadata -->
+    <div id="modalMeta" style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:12px;font-size:13px;color:var(--text-secondary);flex-shrink:0;"></div>
+    <hr style="border:none;border-top:1px solid var(--border);margin:16px 0;flex-shrink:0;">
+    <!-- Scrollable body (split-pane ready) -->
+    <div class="modal-body" id="modalBody">
+      <!-- Left pane -->
+      <div class="pane" id="paneLeft">
+        <div id="modalContent" class="doc-detail-content"></div>
+        <textarea id="modalEditor" style="display:none;width:100%;min-height:300px;font-family:monospace;font-size:14px;padding:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-secondary);color:var(--text-primary);"></textarea>
+      </div>
+      <!-- Divider -->
+      <div class="pane-divider" id="paneDivider" style="display:none;"></div>
+      <!-- Right pane -->
+      <div class="pane" id="paneRight" style="display:none;">
+        <div class="pane-header" id="paneRightHeader" onclick="openRightDocInMainPane()" title="Open this document in main pane" style="display:none;"></div>
+        <div id="modalContentRight" class="doc-detail-content"></div>
+        <div id="paneRightPlaceholder" class="pane-placeholder">Click a document link to open in this pane</div>
+      </div>
+    </div>
+    <!-- Remove button (at bottom) -->
+    <!-- Backlinks panel -->
+    <div id="modalBacklinks" class="backlinks-panel" style="display:none;flex-shrink:0;"></div>
+    <div id="modalRemoveArea" style="margin-top:24px;text-align:right;flex-shrink:0;"></div>
+  </div>
+</div>
+
+<!-- CUSTOM CONFIRM MODAL -->
+<div class="modal-overlay" id="confirmModal">
+  <div class="modal-box" style="max-width:400px;text-align:center;">
+    <div style="font-size:40px;margin-bottom:16px;">⚠️</div>
+    <p id="confirmMsg" style="font-size:15px;color:var(--text-primary);margin-bottom:24px;line-height:1.6;"></p>
+    <div style="display:flex;gap:12px;justify-content:center;">
+      <button class="btn btn-secondary" id="confirmCancelBtn" style="padding:10px 24px;" data-i18n="btn_cancel">Cancel</button>
+      <button class="btn btn-danger" id="confirmOkBtn" style="padding:10px 24px;">🗑️ <span data-i18n="confirm_ok">OK</span></button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============ I18N TRANSLATIONS ============
+const I18N = {
+  en: {brand_title:"QMD Index",nav_search:"Search",nav_graph:"Graph",nav_keyword:"Keyword Search",nav_semantic:"Semantic Search",nav_hybrid:"Hybrid Search",nav_manage:"Manage",nav_collections:"Collections Overview",nav_add_docs:"Add Documents",nav_import:"Import xl.meta",nav_tools:"Tools",nav_context:"Context",nav_expand:"Query Expand",nav_system:"System",nav_stats:"Statistics",nav_optimize:"Optimize",hero_title:"Search Your Knowledge Base",hero_subtitle:"BM25 keyword search across all indexed documents — instant results, zero latency.",hero_placeholder:'Search for anything... e.g. "golf design"',btn_search:"Search",opt_semantic:"Semantic (vec)",opt_all_collections:"All Collections",sem_title:"Semantic Search",sem_subtitle:"Find documents by meaning, not just keywords.",sem_placeholder:'Ask a question... e.g. "how to design a golf green?"',hybrid_title:"Hybrid Search (Query)",hybrid_subtitle:"Combine BM25 + semantic search with Reciprocal Rank Fusion.",hybrid_query_label:"Query",hybrid_intent_label:"Intent (optional)",hybrid_intent_placeholder:"Describe your search goal or context (optional)",coll_title:"Collections Overview",coll_subtitle:"Browse all indexed document collections and their sizes.",add_title:"Add Documents",add_pick_files:"Pick Files",add_pick_folder:"Pick Folder",add_or_label:"— or —",add_no_files:"No files selected",add_done:"Complete!",add_summary:"Summary:",add_errors:"Errors:",add_success:"Added!",add_subtitle:"Index new markdown, text, or rst files into a collection.",add_path_label:"File or Directory Path",add_coll_label:"Collection Name",add_recursive_label:"Scan subdirectories recursively",btn_add_index:"Add to Index",import_title:"Import xl.meta Files",import_subtitle:"Batch import MinIO xl.meta backup files into QMD collections.",import_path_label:"Base Directory",import_prefix_label:"Collection Prefix",btn_import:"Start Import",ctx_title:"Context Management",ctx_subtitle:"Add descriptive metadata to collections for better search relevance.",ctx_coll_label:"Collection Name",ctx_desc_label:"Context Description",btn_save_context:"Save Context",expand_title:"Query Expansion",expand_subtitle:"Expand your query into multiple search types (lex, vec, hyde).",expand_query_label:"Original Query",expand_intent_label:"User Intent (for hyde expansion)",btn_expand:"Expand & Search",stats_title:"Index Statistics",stats_subtitle:"Overview of index health and document counts.",opt_title:"Index Optimization",opt_subtitle:"Clean orphaned FTS entries and rebuild the index.",opt_standard_title:"Standard Optimization",opt_standard_desc:"Remove orphaned FTS entries and rebuild. Safe, no data loss.",opt_full_title:"Full Cleanup + Vacuum",opt_full_desc:"Permanently remove soft-deleted documents and compact DB.",btn_optimize:"Run Optimization",btn_vacuum:"Run Full Cleanup",btn_close:"Close",btn_edit:"Edit",btn_save:"Save",btn_cancel:"Cancel",btn_copy:"Copy",btn_split:"Split",btn_unsplit:"Unsplit",split_title:"Split view",confirm_ok:"OK",edit_title:"Edit content",save_title:"Save changes",cancel_title:"Cancel editing",copy_title:"Copy content",btn_language:"Language",btn_theme:"Toggle Theme",btn_upgrade:"Upgrade",add_path_placeholder:"Paste paths separated by commas or newlines",ctx_desc_placeholder:"Describe what this collection is about (optional)",btn_remove:"Remove",toast_saved:"Document saved!",toast_save_failed:"Save failed",toast_save_error:"Save error",toast_failed_load:"Failed to load",toast_failed:"Failed",toast_please_query:"Please enter a query",toast_done:"Done!",toast_removed:"Removed",toast_remove_failed:"Remove failed",toast_error:"Error",toast_upgrade_completed:"Upgrade completed!",toast_upgrade_failed:"Upgrade failed",toast_copied:"Copied to clipboard",toast_copy_manual:"Content selected, press Ctrl+C to copy",confirm_remove:"Remove this document? This cannot be undone.",confirm_vacuum:"This will permanently delete all soft-deleted documents. Continue?",confirm_upgrade_check:"Check for updates and attempt upgrade?",confirm_upgrade_git:"Attempt upgrade via git pull?",loading:"Loading...",no_results:"No matching documents found.",docs:"documents",nav_collection_docs:"Collection Docs",coll_docs_title:"Collection Documents",coll_docs_subtitle:"Browse and manage documents within a specific collection.",coll_docs_select_label:"Select Collection",coll_docs_load_btn:"Load Documents",remove_doc:"Remove",confirm_remove:"Are you sure you want to remove this document?",remove_success:"Document removed successfully!",remove_error:"Failed to remove document",copy:"Copy",copied:"Copied!",show_detail:"Show",nav_browse:"Browse",browse_folders:"Folders",browse_all_title:"All Collections",browse_filter_placeholder:"Filter files...",browse_select_msg:"Select a folder to view its files",confirm_remove_final:"Are you sure? This action cannot be undone."},
+  zh_TW: {brand_title:"QMD Index",nav_search:"搜尋",nav_graph:"圖譜",nav_keyword:"關鍵字搜尋",nav_semantic:"語意搜尋",nav_hybrid:"混合搜尋",nav_manage:"管理",nav_collections:"集合",nav_add_docs:"新增文件",nav_import:"匯入 xl.meta",nav_tools:"工具",nav_context:"上下文",nav_expand:"查詢擴展",nav_system:"系統",nav_stats:"統計",nav_optimize:"最佳化",hero_title:"搜尋你的知識庫",hero_subtitle:"BM25 關鍵字搜尋，遍歷所有已索引文件 — 即時結果，零延遲。",hero_placeholder:'搜尋任何內容... 例如 "golf design"',btn_search:"搜尋",opt_semantic:"語意 (vec)",opt_all_collections:"所有集合",sem_title:"語意搜尋",sem_subtitle:"透過意義而非僅關鍵字來尋找文件。",sem_placeholder:'提出問題... 例如 "如何設計高爾夫球場果嶺?"',hybrid_title:"混合搜尋 (Query)",hybrid_subtitle:"結合 BM25 + 語意搜尋，使用互逆等級融合技術。",hybrid_query_label:"查詢",hybrid_intent_label:"意圖（可選）",hybrid_intent_placeholder:"描述搜索目的或背景（可選）",coll_title:"集合管理",coll_subtitle:"瀏覽所有已索引的文件集合及其大小。",add_title:"新增文件",add_pick_files:"選擇檔案",add_pick_folder:"選擇資料夾",add_or_label:"— 或 —",add_no_files:"未選擇任何檔案",add_done:"完成！",add_summary:"摘要：",add_errors:"錯誤：",add_success:"已新增！",add_subtitle:"將新的 markdown、文字或 rst 文件加入集合。",add_path_label:"檔案或目錄路徑",add_coll_label:"集合名稱",add_recursive_label:"遞迴掃描子目錄",btn_add_index:"新增至索引",import_title:"匯入 xl.meta 檔案",import_subtitle:"批次匯入 MinIO xl.meta 備份檔案到 QMD 集合。",import_path_label:"基底目錄",import_prefix_label:"集合前綴",btn_import:"開始匯入",ctx_title:"上下文管理",ctx_subtitle:"為集合作描述性中繼資料，改善搜尋相關性。",ctx_coll_label:"集合名稱",ctx_desc_label:"上下文描述",btn_save_context:"儲存上下文",expand_title:"查詢擴展",expand_subtitle:"將你的查詢擴展為多種搜尋類型（lex、vec、hyde）。",expand_query_label:"原始查詢",expand_intent_label:"使用者意圖（用於 hyde 擴展）",btn_expand:"擴展並搜尋",stats_title:"索引統計",stats_subtitle:"索引健康狀況和文件數量的概覽。",opt_title:"索引最佳化",opt_subtitle:"清理孤立的 FTS 條目並重建索引。",opt_standard_title:"標準最佳化",opt_standard_desc:"移除孤立 FTS 條目並重建。安全，無資料遺失。",opt_full_title:"完整清理 + VACUUM",opt_full_desc:"永久刪除軟刪除的文件並壓縮資料庫。",btn_optimize:"執行最佳化",btn_vacuum:"執行完整清理",btn_close:"關閉",loading:"載入中...",no_results:"找不到相符的文件。",docs:"筆文件",nav_collection_docs:"集合文件",coll_docs_title:"集合文件",coll_docs_subtitle:"瀏覽和管理特定集合中的文件。",coll_docs_select_label:"選擇集合",coll_docs_load_btn:"加載文件",remove_doc:"移除",confirm_remove:"確定要移除此文件嗎？",remove_success:"文件已成功移除！",remove_error:"移除文件失敗",copy:"複製",copied:"已複製！",show_detail:"顯示",nav_browse:"Browse",browse_folders:"Folders",browse_all_title:"All Collections",browse_filter_placeholder:"Filter files...",browse_select_msg:'Select a folder to view its files',content_truncated:"Content truncated, more available...",no_content:"No content available",load_failed:"Failed to load document",confirm_remove:"Remove this document? This cannot be undone.",removed:"Removed",btn_split:"分割",btn_unsplit:"取消分割",split_title:"分割視圖",nav_browse:"瀏覽",browse_folders:"資料夾",browse_all_title:"所有集合",browse_filter_placeholder:"篩選文件...",browse_select_msg:"選擇一個資料夾以查看其文件"},
+  zh_CN: {brand_title:"QMD Index",nav_search:"搜索",nav_graph:"图谱",nav_keyword:"关键词搜索",nav_semantic:"语义搜索",nav_hybrid:"混合搜索",nav_manage:"管理",nav_collections:"集合",nav_add_docs:"添加文档",nav_import:"导入 xl.meta",nav_tools:"工具",nav_context:"上下文",nav_expand:"查询扩展",nav_system:"系统",nav_stats:"统计",nav_optimize:"优化",hero_title:"搜索你的知识库",hero_subtitle:"BM25 关键词搜索，遍历所有已索引文档 — 即时结果，零延迟。",hero_placeholder:'搜索任何内容... 例如 "golf design"',btn_search:"搜索",opt_semantic:"语义 (vec)",opt_all_collections:"所有集合",sem_title:"语义搜索",sem_subtitle:"通过意义而非仅关键词来查找文档。",sem_placeholder:'提出问题... 例如 "如何设计高尔夫球场果岭?"',hybrid_title:"混合搜索 (Query)",hybrid_subtitle:"结合 BM25 + 语义搜索，使用互逆等级融合技术。",hybrid_query_label:"查询",hybrid_intent_label:"意图（可选）",hybrid_intent_placeholder:"描述搜索目的或背景（可选）",coll_title:"集合管理",coll_subtitle:"浏览所有已索引的文档集合及其大小。",add_title:"添加文档",add_pick_files:"选择文件",add_pick_folder:"选择文件夹",add_or_label:"— 或 —",add_no_files:"未选择任何文件",add_done:"完成！",add_summary:"摘要：",add_errors:"错误：",add_success:"已添加！",add_subtitle:"将新的 markdown、文本或 rst 文件加入集合。",add_path_label:"文件或目录路径",add_coll_label:"集合名称",add_recursive_label:"递归扫描子目录",btn_add_index:"添加到索引",import_title:"导入 xl.meta 文件",import_subtitle:"批量导入 MinIO xl.meta 备份文件到 QMD 集合。",import_path_label:"基础目录",import_prefix_label:"集合前缀",btn_import:"开始导入",ctx_title:"上下文管理",ctx_subtitle:"为集合作者描述性元数据，改善搜索相关性。",ctx_coll_label:"集合名称",ctx_desc_label:"上下文描述",btn_save_context:"保存上下文",expand_title:"查询扩展",expand_subtitle:"将你的查询扩展为多种搜索类型（lex、vec、hyde）。",expand_query_label:"原始查询",expand_intent_label:"用户意图（用于 hyde 扩展）",btn_expand:"扩展并搜索",stats_title:"索引统计",stats_subtitle:"索引健康状况和文档数量的概览。",opt_title:"索引优化",opt_subtitle:"清理孤立的 FTS 条目并重建索引。",opt_standard_title:"标准优化",opt_standard_desc:"移除孤立 FTS 条目并重建。安全，无数据丢失。",opt_full_title:"完整清理 + VACUUM",opt_full_desc:"永久删除软删除的文档并压缩数据库。",btn_optimize:"执行优化",btn_vacuum:"执行完整清理",btn_close:"关闭",btn_edit:"编辑",btn_save:"保存",btn_cancel:"取消",confirm_ok:"确定",btn_copy:"复制",btn_split:"分屏",btn_unsplit:"取消分屏",split_title:"分屏视图",edit_title:"编辑内容",save_title:"保存修改",cancel_title:"取消编辑",copy_title:"复制内容",btn_language:"语言",btn_theme:"切换主题",btn_upgrade:"升级",add_path_placeholder:"粘贴路径，用逗号或换行分隔",ctx_desc_placeholder:"描述该集合的内容（可选）",btn_remove:"移除",toast_saved:"文档已保存！",toast_save_failed:"保存失败",toast_save_error:"保存出错",toast_failed_load:"加载失败",toast_failed:"失败",toast_please_query:"请输入查询",toast_done:"完成！",toast_removed:"已移除",toast_remove_failed:"移除失败",toast_error:"错误",toast_upgrade_completed:"升级完成！",toast_upgrade_failed:"升级失败",toast_copied:"已复制到剪贴板",toast_copy_manual:"内容已选中，请按 Ctrl+C 复制",confirm_remove:"确定移除该文档？此操作不可撤销。",confirm_vacuum:"这将永久删除所有已软删除的文档。是否继续？",confirm_upgrade_check:"检查更新并尝试升级？",confirm_upgrade_git:"尝试通过 git pull 升级？",loading:"加载中...",no_results:"找不到匹配的文档。",docs:"篇文档",nav_collection_docs:"集合文档",coll_docs_title:"集合文档",coll_docs_subtitle:"浏览和管理特定集合中的文档。",coll_docs_select_label:"选择集合",coll_docs_load_btn:"加载文档",remove_doc:"移除",confirm_remove:"确定要移除此文档吗？",remove_success:"文档已成功移除！",remove_error:"移除文档失败",copy:"复制",copied:"已复制！",show_detail:"显示",nav_browse:"浏览",browse_folders:"文件夹",browse_all_title:"所有集合",browse_filter_placeholder:"筛选文档...",content_truncated:"内容已截断，还有更多...",no_content:"没有内容",load_failed:"加载文档失败",browse_select_msg:"选择一个文件夹以查看其文档",confirm_remove_final:"再次确认：此操作无法恢复，确定删除？"},
+  ja: {brand_title:"QMD Index",nav_search:"検索",nav_graph:"グラフ",nav_keyword:"キーワード検索",nav_semantic:"セマンティック検索",nav_hybrid:"ハイブリッド検索",nav_manage:"管理",nav_collections:"コレクション",nav_add_docs:"ドキュメント追加",nav_import:"xl.meta インポート",nav_tools:"ツール",nav_context:"コンテキスト",nav_expand:"クエリ拡張",nav_system:"システム",nav_stats:"統計",nav_optimize:"最適化",hero_title:"ナレッジベースを検索",hero_subtitle:"BM25 キーワード検索で全インデックス文書を横断検索。即時結果、ゼロレイテンシ。",hero_placeholder:'何でも検索... 例 "golf design"',btn_search:"検索",opt_semantic:"セマンティック (vec)",opt_all_collections:"すべてのコレクション",sem_title:"セマンティック検索",sem_subtitle:"キーワードだけでなく意味でドキュメントを検索。",sem_placeholder:'質問を... 例 "ゴルフのグリーンをどう設計するか?"',hybrid_title:"ハイブリッド検索 (Query)",hybrid_subtitle:"BM25 + セマンティック検索を逆ランク融合で結合。",hybrid_query_label:"クエリ",hybrid_intent_label:"意図（オプション）",hybrid_intent_placeholder:"検索の目的や背景を記述（オプション）",coll_title:"コレクション管理",coll_subtitle:"すべてのインデックス済みコレクションとそのサイズを表示。",add_title:"ドキュメント追加",add_pick_files:"ファイルを選択",add_pick_folder:"フォルダを選択",add_or_label:"— または —",add_no_files:"ファイルが選択されていません",add_done:"完了！",add_summary:"概要：",add_errors:"エラー：",add_success:"追加完了！",add_subtitle:"新しい markdown、テキスト、rst ファイルをコレクションにインデックス。",add_path_label:"ファイルまたはディレクトリパス",add_coll_label:"コレクション名",add_recursive_label:"サブディレクトリを再帰的にスキャン",btn_add_index:"インデックスに追加",import_title:"xl.meta ファイルのインポート",import_subtitle:"MinIO xl.meta バックアップファイルを QMD コレクションに一括インポート。",import_path_label:"ベースディレクトリ",import_prefix_label:"コレクションプレフィックス",btn_import:"インポート開始",ctx_title:"コンテキスト管理",ctx_subtitle:"検索関連性を向上させるためにコレクションに説明的メタデータを追加。",ctx_coll_label:"コレクション名",ctx_desc_label:"コンテキスト説明",btn_save_context:"コンテキストを保存",expand_title:"クエリ拡張",expand_subtitle:"クエリを複数の検索タイプ（lex、vec、hyde）に展開。",expand_query_label:"元のクエリ",expand_intent_label:"ユーザー意図（hyde 展開用）",btn_expand:"展開して検索",stats_title:"インデックス統計",stats_subtitle:"インデックスの健全性とドキュメント数の概要。",opt_title:"インデックス最適化",opt_subtitle:"孤立した FTS エントリをクリーンアップしてインデックスを再構築。",opt_standard_title:"標準最適化",opt_standard_desc:"孤立的な FTS エントリを削除して再構築。安全、データ損失なし。",opt_full_title:"完全クリーンアップ + VACUUM",opt_full_desc:"ソフトデリートされたドキュメントを永久に削除し、DBを圧縮。",btn_optimize:"最適化を実行",btn_vacuum:"完全クリーンアップ実行",btn_close:"閉じる",loading:"読み込み中...",no_results:"一致するドキュメントが見つかりません。",docs:"件のドキュメント",nav_collection_docs:"コレクションファイル",coll_docs_title:"コレクション文書",coll_docs_subtitle:"特定のコレクション内のドキュメントを閲覧および管理。",coll_docs_select_label:"コレクションを選択",coll_docs_load_btn:"ドキュメントを読み込む",remove_doc:"削除",confirm_remove:"このドキュメントを削除してもよろしいですか？",remove_success:"ドキュメントが正常に削除されました！",remove_error:"ドキュメントの削除に失敗しました",copy:"コピー",copied:"コピーしました！",show_detail:"表示",nav_browse:"浏览",browse_folders:"文件夹",browse_all_title:"所有集合",browse_filter_placeholder:"筛选文档...",browse_select_msg:'选择文件夹以查看文档',content_truncated:"内容被截断，还有更多...",no_content:"没有内容",load_failed:"加载文档失败",confirm_remove:"确定移除此文档？此操作无法撤销。",removed:"已移除",nav_browse:"閲覧",browse_folders:"フォルダ",browse_all_title:"すべてのコレクション",browse_filter_placeholder:"ファイルでフィルター...",browse_select_msg:"フォルダを選択してファイルを表示"},
+  ko: {brand_title:"QMD Index",nav_search:"검색",nav_graph:"그래프",nav_keyword:"키워드 검색",nav_semantic:"시맨틱 검색",nav_hybrid:"하이브리드 검색",nav_manage:"관리",nav_collections:"컬렉션",nav_add_docs:"문서 추가",nav_import:"xl.meta 가져오기",nav_tools:"도구",nav_context:"컨텍스트",nav_expand:"쿼리 확장",nav_system:"시스템",nav_stats:"통계",nav_optimize:"최적화",hero_title:"지식베이스 검색",hero_subtitle:"모든 인덱스 문서에 대한 BM25 키워드 검색 — 즉시 결과, 지연 시간 제로.",hero_placeholder:'무엇이든 검색... 예 "golf design"',btn_search:"검색",opt_semantic:"시맨틱 (vec)",opt_all_collections:"모든 컬렉션",sem_title:"시맨틱 검색",sem_subtitle:"키워드뿐만 아니라 의미로 문서 찾기.",sem_placeholder:'질문하기... 예 "골프 그린을 어떻게 디자인할까?"',hybrid_title:"하이브리드 검색 (Query)",hybrid_subtitle:"BM25 + 시맨틱 검색을 역순위 융합으로 결합.",hybrid_query_label:"쿼리",hybrid_intent_label:"의도 (선택사항)",hybrid_intent_placeholder:"검색 목적이나 배경 설명 (선택사항)",coll_title:"컬렉션 관리",coll_subtitle:"모든 인덱싱된 문서 컬렉션과 크기를 탐색합니다.",add_title:"문서 추가",add_pick_files:"파일 선택",add_pick_folder:"폴더 선택",add_or_label:"— 또는 —",add_no_files:"파일이 선택되지 않았습니다",add_done:"완료!",add_summary:"요약:",add_errors:"오류:",add_success:"추가됨!",add_subtitle:"새로운 markdown, 텍스트 또는 rst 파일을 컬렉션에 인덱싱하세요.",add_path_label:"파일 또는 디렉토리 경로",add_coll_label:"컬렉션 이름",add_recursive_label:"하위 디렉토리 재귀적으로 스캔",btn_add_index:"인덱스에 추가",import_title:"xl.meta 파일 가져오기",import_subtitle:"MinIO xl.meta 백업 파일을 QMD 컬렉션에 일괄 가져오기.",import_path_label:"기본 디렉토리",import_prefix_label:"컬렉션 접두사",btn_import:"가져오기 시작",ctx_title:"컨텍스트 관리",ctx_subtitle:"더 나은 검색 관련성을 위해 컬렉션에 설명 메타데이터 추가.",ctx_coll_label:"컬렉션 이름",ctx_desc_label:"컨텍스트 설명",btn_save_context:"컨텍스트 저장",expand_title:"쿼리 확장",expand_subtitle:"쿼리를 여러 검색 유형(lex, vec, hyde)으로 확장합니다.",expand_query_label:"원본 쿼리",expand_intent_label:"사용자 의도 (hyde 확장용)",btn_expand:"확장 및 검색",stats_title:"인덱스 통계",stats_subtitle:"인덱스 상태와 문서 수 요약.",opt_title:"인덱스 최적화",opt_subtitle:"고아 FTS 항목 정리 및 인덱스 재빌드.",opt_standard_title:"표준 최적화",opt_standard_desc:"고아 FTS 항목 제거 및 재빌드. 안전, 데이터 손실 없음.",opt_full_title:"전체 정리 + VACUUM",opt_full_desc:"소프트 삭제된 문서를 영구적으로 제거하고 DB를 압축합니다.",btn_optimize:"최적화 실행",btn_vacuum:"전체 정리 실행",btn_close:"닫기",loading:"로딩 중...",no_results:"일치하는 문서를 찾을 수 없습니다.",docs:"개 문서",nav_collection_docs:"컬렉션 문서",coll_docs_title:"컬렉션 문서",coll_docs_subtitle:"특정 컬렉션의 문서를 탐색하고 관리합니다.",coll_docs_select_label:"컬렉션 선택",coll_docs_load_btn:"문서 로드",remove_doc:"삭제",confirm_remove:"이 문서를 삭제하시겠습니까?",remove_success:"문서가 성공적으로 삭제되었습니다!",remove_error:"문서 삭제에 실패했습니다",copy:"복사",copied:"복사됨!",show_detail:"보기",nav_browse:"関覧",browse_folders:"フォルダ",browse_all_title:"すべてのコレクション",browse_filter_placeholder:"ファイルでフィルタ...",browse_select_msg:'フォルダを選択してファイルを表示',content_truncated:"コンテンツが切り撃られました。さらにあります...",no_content:"コンテンツがありません",load_failed:"ドキュメントの読み込みに失敗しました",confirm_remove:"このドキュメントを削除してもよろしいですか？この操作は取り消せません。",removed:"削除しました",nav_browse:"검색",browse_folders:"폴더",browse_all_title:"모든 컬렉션",browse_filter_placeholder:"파일로 필터링...",browse_select_msg:"폴더를 선택하여 파일 보기"}}
+const LANG_LABELS = {en:'English',zh_TW:'繁體中文',zh_CN:'简体中文',ja:'日本語',ko:'한국어'};
+
+// Settings i18n (appended to each language)
+const SETTINGS_I18N = {
+  en: {nav_settings:"Settings",settings_title:"Model Settings",settings_subtitle:"Configure the three core models powering the knowledge base.",settings_embed_label:"Embedding Model",settings_embed_desc:"Converts text into vectors for semantic/vector search.",settings_rerank_label:"Reranker Model",settings_rerank_desc:"Re-ranks search results by relevance for better accuracy.",settings_llm_label:"Brain / LLM",settings_llm_desc:"Large Language Model for query expansion, summarization, and chat.",settings_api_url:"API URL",settings_model_name:"Model Name",settings_embed_dim:"Vector Dimension",settings_api_key:"API Key",settings_ctx_window:"Context Window (tokens)",settings_save_btn:"Save Settings",settings_test_btn:"Test Connections",settings_saved:"Settings saved!",settings_save_failed:"Failed to save settings",settings_load_failed:"Failed to load settings",settings_testing:"Testing connections...",settings_test_ok:"All connections OK",settings_test_fail:"Some connections failed"},
+  zh_CN: {nav_settings:"设置",settings_title:"模型设置",settings_subtitle:"配置支持知识库的三个核心模型。",settings_embed_label:"向量嵌入模型",settings_embed_desc:"将文本转换为向量，用于语义/向量搜索。",settings_rerank_label:"重排序模型",settings_rerank_desc:"按相关性对搜索结果重新排序，提高准确度。",settings_llm_label:"大脑 / 大语言模型",settings_llm_desc:"用于查询扩展、摘要和对话的大语言模型。",settings_api_url:"API 地址",settings_model_name:"模型名称",settings_embed_dim:"向量维度",settings_api_key:"API 密钥",settings_ctx_window:"上下文窗口（Token）",settings_save_btn:"保存设置",settings_test_btn:"测试连接",settings_saved:"设置已保存！",settings_save_failed:"保存设置失败",settings_load_failed:"加载设置失败",settings_testing:"正在测试连接...",settings_test_ok:"所有连接正常",settings_test_fail:"部分连接失败"},
+  zh_TW: {nav_settings:"設置",settings_title:"模型設定",settings_subtitle:"配置支援知識庫的三個核心模型。",settings_embed_label:"向量嵌入模型",settings_embed_desc:"將文本轉換為向量，用於語意/向量搜索。",settings_rerank_label:"重排序模型",settings_rerank_desc:"按相關性對搜索結果重新排序，提高準確度。",settings_llm_label:"大腦 / 大語言模型",settings_llm_desc:"用於查詢擴展、摘要和對話的大語言模型。",settings_api_url:"API 地址",settings_model_name:"模型名稱",settings_embed_dim:"向量維度",settings_api_key:"API 密鑰",settings_ctx_window:"上下文視窗（Token）",settings_save_btn:"儲存設定",settings_test_btn:"測試連線",settings_saved:"設定已儲存！",settings_save_failed:"儲存設定失敗",settings_load_failed:"載入設定失敗",settings_testing:"正在測試連線...",settings_test_ok:"所有連線正常",settings_test_fail:"部分連線失敗"},
+  ja: {nav_settings:"設定",settings_title:"モデル設定",settings_subtitle:"ナレッジベースを支える3つのコアモデルを設定します。",settings_embed_label:"埋め込みモデル",settings_embed_desc:"テキストをベクトルに変換し、セマンティック検索に使用します。",settings_rerank_label:"再ランク付けモデル",settings_rerank_desc:"検索結果を関連性で再ランク付けし、精度を向上させます。",settings_llm_label:"大規模言語モデル",settings_llm_desc:"クエリ拡張、要約、チャットに使用されます。",settings_api_url:"API URL",settings_model_name:"モデル名",settings_embed_dim:"ベクトル次元",settings_api_key:"API キー",settings_ctx_window:"コンテキストウィンドウ（トークン）",settings_save_btn:"設定を保存",settings_test_btn:"接続テスト",settings_saved:"設定を保存しました！",settings_save_failed:"設定の保存に失敗しました",settings_load_failed:"設定の読み込みに失敗しました",settings_testing:"接続をテスト中...",settings_test_ok:"すべての接続が正常です",settings_test_fail:"一部の接続に失敗しました"},
+};
+
+for (const lang in SETTINGS_I18N) {
+  Object.assign(I18N[lang], SETTINGS_I18N[lang]);
+}
+
+function setLanguage(lang) {
+  if (!I18N[lang]) return;
+  currentLang = lang;
+  localStorage.setItem('qmd_lang', lang);
+  const t = I18N[lang];
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.getAttribute('data-i18n');
+    if (t[key] !== undefined) el.textContent = t[key];
+  });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+    const key = el.getAttribute('data-i18n-placeholder');
+    if (t[key] !== undefined) el.placeholder = t[key];
+  });
+  document.querySelectorAll('[data-i18n-title]').forEach(el => {
+    const key = el.getAttribute('data-i18n-title');
+    if (t[key] !== undefined) el.title = t[key];
+  });
+  document.documentElement.setAttribute('lang', lang);
+  document.title = `${t.hero_title || t.brand_title} — QMD Index`;
+  // Update language dropdown active state
+  document.querySelectorAll('.lang-option').forEach(opt => {
+    opt.classList.toggle('active-lang', opt.getAttribute('data-lang') === lang);
+  });
+  showToast(`${LANG_LABELS[lang]||lang}`, 'info');
+}
+
+function t(key) { return (I18N[currentLang] || I18N.en)[key] || key; }
+
+function setTheme(theme) {
+  currentTheme = theme;
+  localStorage.setItem('qmd_theme', theme);
+  document.documentElement.setAttribute('data-theme', theme === 'dark' ? 'dark' : '');
+  document.getElementById('themeBtn').textContent = theme === 'dark' ? '☀️' : '🌙';
+}
+
+function showToast(message, type) {
+  const c = document.getElementById('toastContainer');
+  const toast = document.createElement('div');
+  toast.className = `toast ${type||'info'}`;
+  toast.textContent = message;
+  c.appendChild(toast);
+  setTimeout(() => toast.remove(), 3000);
+}
+
+const API_BASE = '';
+async function apiGet(path) { try { const r = await fetch(API_BASE + path); return await r.json(); } catch(e) { return {error:e.message}; } }
+async function apiPost(path, body) { try { const r = await fetch(API_BASE+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); return await r.json(); } catch(e) { return {error:e.message}; } }
+async function apiPut(path, body) { try { const r = await fetch(API_BASE+path,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); return await r.json(); } catch(e) { return {error:e.message}; } }
+
+// ============ LANGUAGE DROPDOWN ============
+function buildLangMenu() {
+  const menu = document.getElementById('langMenu');
+  menu.innerHTML = Object.keys(I18N).map(lang =>
+    `<div class="lang-option${lang===currentLang?' active-lang':''}" data-lang="${lang}">${LANG_LABELS[lang]||lang}</div>`
+  ).join('');
+  menu.querySelectorAll('.lang-option').forEach(opt => {
+    opt.addEventListener('click', () => setLanguage(opt.getAttribute('data-lang')));
+  });
+}
+
+document.getElementById('langBtn').addEventListener('click', e => { e.stopPropagation(); document.getElementById('langMenu').classList.toggle('show'); });
+document.addEventListener('click', e => { if (!e.target.closest('.lang-dropdown')) document.getElementById('langMenu').classList.remove('show'); });
+
+// ============ THEME TOGGLE ============
+document.getElementById('themeBtn').addEventListener('click', () => setTheme(currentTheme === 'dark' ? 'light' : 'dark'));
+
+// ============ BROWSE — Folder/File Tree View ============
+let allCollections = [];
+let currentBrowseCollection = null; // null = "All Collections" view
+let browsePage = 1;
+const BROWSE_PAGE_SIZE = 50;
+
+async function loadFolderTree() {
+  const data = await apiGet('/api/collections');
+  if (!data) return;
+
+  allCollections = [];
+  const rawLines = (data.output || '').split('\n');
+  for (let i = 0; i < rawLines.length; i++) {
+    const line = rawLines[i];
+    const m = line.match(/^\[\d+\]\s+(ok|--)\s+(.+)$/);
+    if (m) {
+      const name = m[2].trim();
+      let docs = 0;
+      for (let j = i + 1; j < Math.min(i + 5, rawLines.length); j++) {
+        const dm = rawLines[j].match(/Docs:\s*(\d+)/);
+        if (dm) { docs = parseInt(dm[1]); break; }
+      }
+      allCollections.push({ name, docs });
+    }
+  }
+
+  document.getElementById('collCountBadge').textContent = allCollections.length;
+
+  // Render folder tree on the left sidebar
+  const treeEl = document.getElementById('folderTree');
+  if (treeEl) {
+    let html = '';
+    // "All Collections" root item
+    const totalDocs = allCollections.reduce((s, c) => s + c.docs, 0);
+    html += `<div class="browse-folder-item active" data-collection="" onclick="browseSelectCollection('')">
+      <span style="margin-right:6px;">📂</span>
+      <span>${currentLang === 'zh_TW' ? '所有集合' : currentLang === 'zh_CN' ? '所有集合' : currentLang === 'ja' ? 'すべてのコレクション' : 'All Collections'}</span>
+      <span class="coll-count">${totalDocs}</span>
+    </div>`;
+    // Individual collections as sub-folders
+    allCollections.forEach(c => {
+      html += `<div class="browse-folder-item" data-collection="${escapeHtml(c.name)}" onclick="browseSelectCollection('${escapeJs(c.name)}')">
+        <span style="margin-right:6px;">📁</span>
+        <span>${escapeHtml(c.name)}</span>
+        <span class="coll-count">${c.docs}</span>
+      </div>`;
+    });
+    treeEl.innerHTML = html;
+  }
+
+  // Populate collection filter dropdowns
+  ['collFilterUnified'].forEach(id => {
+    const sel = document.getElementById(id); if (!sel) return;
+    sel.innerHTML = `<option value="">${t('opt_all_collections')}</option>` + allCollections.map(c => `<option value="${c.name}">${escapeHtml(c.name)} (${c.docs})</option>`).join('');
+  });
+}
+
+function browseSelectCollection(collName) {
+  currentBrowseCollection = collName || null;
+  browsePage = 1;
+
+  // Update active state in folder tree
+  document.querySelectorAll('.browse-folder-item').forEach(el => {
+    el.classList.toggle('active', el.getAttribute('data-collection') === (collName || ''));
+  });
+
+  // Update title
+  const titleEl = document.getElementById('browseTitle');
+  if (!collName) {
+    titleEl.textContent = currentLang === 'zh_TW' ? '所有集合' : currentLang === 'zh_CN' ? '所有集合' : currentLang === 'ja' ? 'すべてのコレクション' : 'All Collections';
+  } else {
+    titleEl.textContent = collName;
+  }
+
+  // Load files for this folder
+  browseLoadFiles();
+}
+
+async function browseLoadFiles() {
+  const listArea = document.getElementById('fileListArea');
+  if (!currentBrowseCollection) {
+    // "All Collections" view — show a summary of all collections as folders with file counts
+    listArea.innerHTML = '';
+    let html = `<div style="margin-bottom:8px;font-size:13px;color:var(--text-secondary)">${allCollections.length} ${currentLang === 'zh_TW' ? '個集合' : currentLang === 'zh_CN' ? '个集合' : currentLang === 'ja' ? 'コレクション' : 'collections'} · ${allCollections.reduce((s, c) => s + c.docs, 0)} ${currentLang === 'zh_TW' ? '筆文件' : currentLang === 'zh_CN' ? '篇文档' : currentLang === 'ja' ? 'ドキュメント' : 'documents'}</div>`;
+    allCollections.sort((a, b) => b.docs - a.docs).forEach(c => {
+      html += `<div class="doc-row" style="cursor:pointer" onclick="browseSelectCollection('${escapeJs(c.name)}')">
+        <div style="flex:1">
+          <div class="doc-row-title">📁 ${escapeHtml(c.name)}</div>
+          <div class="doc-row-path">${c.docs} ${currentLang === 'zh_TW' ? '筆文件' : currentLang === 'zh_CN' ? '篇文档' : currentLang === 'ja' ? 'ドキュメント' : 'documents'}</div>
+        </div>
+        <div class="doc-row-actions">
+          <button class="doc-row-btn" onclick="event.stopPropagation();browseSelectCollection('${escapeJs(c.name)}')">👁️ ${currentLang === 'zh_TW' ? '查看' : currentLang === 'zh_CN' ? '查看' : currentLang === 'ja' ? '表示' : 'View'}</button>
+        </div>
+      </div>`;
+    });
+    listArea.innerHTML = html;
+    return;
+  }
+
+  // Loading state
+  listArea.innerHTML = `<div style="text-align:center;padding:24px"><span class="spinner"></span> ${t('loading')}</div>`;
+
+  const data = await apiGet(`/api/collection/docs?collection=${encodeURIComponent(currentBrowseCollection)}&page=${browsePage}&limit=${BROWSE_PAGE_SIZE}`);
+  if (!data || data.error) {
+    listArea.innerHTML = `<div class="card" style="border-left:3px solid var(--error)"><strong>Error:</strong> ${escapeHtml(data?.error || 'Failed to load')}</div>`;
+    return;
+  }
+
+  // Apply file filter if search input has text
+  const searchTerm = (document.getElementById('browseSearchInput')?.value || '').toLowerCase().trim();
+  let docs = data.docs;
+  if (searchTerm) {
+    docs = docs.filter(d =>
+      (d.title || '').toLowerCase().includes(searchTerm) ||
+      (d.path || '').toLowerCase().includes(searchTerm)
+    );
+  }
+
+  // Render files
+  let html = '';
+  if (docs.length === 0) {
+    const msg = searchTerm ?
+      (currentLang === 'zh_TW' ? '沒有符合條件的文件' : currentLang === 'zh_CN' ? '没有符合条件的文档' : currentLang === 'ja' ? '条件に一致するドキュメントはありません' : 'No files match the filter') :
+      (currentLang === 'zh_TW' ? '此資料夾中沒有文件' : currentLang === 'zh_CN' ? '此文件夹中没有文档' : currentLang === 'ja' ? 'このフォルダにはファイルがありません' : 'This folder has no documents');
+    html = `<div class="card"><p style="color:var(--text-tertiary);text-align:center">${msg}</p></div>`;
+  } else {
+    const totalLabel = `${data.total} ${currentLang === 'zh_TW' ? '筆文件' : currentLang === 'zh_CN' ? '篇文档' : currentLang === 'ja' ? 'ドキュメント' : 'documents'}${searchTerm ? ` (${docs.length} filtered)` : ''}`;
+    html += `<div style="margin-bottom:8px;font-size:13px;color:var(--text-secondary)">${escapeHtml(currentBrowseCollection)}: ${totalLabel}</div>`;
+
+    docs.forEach(doc => {
+      const pathShort = doc.path.length > 60 ? '...' + doc.path.slice(-57) : doc.path;
+      const tagsHtml = doc.tags && doc.tags.length > 0 ? doc.tags.map(t => `<span class="tag-pill tag-pill-sm" onclick="event.stopPropagation();filterByTag('${escapeJs(t)}')">${escapeHtml(t)}</span>`).join('') : '';
+      html += `<div class="doc-row">
+        <div style="flex:1" onclick="showDocFromBrowse(${doc.id})">
+          <div class="doc-row-title">${escapeHtml(doc.title)}</div>
+          <div class="doc-row-path" title="${escapeHtml(doc.path)}">📄 ${escapeHtml(pathShort)}</div>
+          ${tagsHtml ? `<div style="margin-top:4px">${tagsHtml}</div>` : ''}
+        </div>
+        <div class="doc-row-actions">
+          <button class="doc-row-btn" onclick="showDocFromBrowse(${doc.id})">👁️ ${currentLang === 'zh_TW' ? '查看' : currentLang === 'zh_CN' ? '查看' : currentLang === 'ja' ? '表示' : 'View'}</button>
+          <button class="doc-row-btn remove" onclick="removeDocFromBrowse(${doc.id},'${escapeJs(doc.title)}')">🗑️</button>
+        </div>
+      </div>`;
+    });
+
+    // Pagination (only if no search filter)
+    if (!searchTerm && data.total > BROWSE_PAGE_SIZE) {
+      const totalPages = Math.ceil(data.total / BROWSE_PAGE_SIZE);
+      html += `<div class="pagination-wrap">`;
+      html += `<button class="pagination-btn" ${browsePage <= 1 ? 'disabled' : ''} onclick="browseGoToPage(${browsePage - 1})">${currentLang === 'zh_TW' ? '‹ 上一頁' : currentLang === 'zh_CN' ? '‹ 上一页' : currentLang === 'ja' ? '‹ 前へ' : '‹ Prev'}</button>`;
+      html += `<span class="pagination-info">${browsePage} / ${totalPages || 1}</span>`;
+      html += `<button class="pagination-btn" ${browsePage >= totalPages ? 'disabled' : ''} onclick="browseGoToPage(${browsePage + 1})">${currentLang === 'zh_TW' ? '下一頁 ›' : currentLang === 'zh_CN' ? '下一页 ›' : currentLang === 'ja' ? '次へ ›' : 'Next ›'}</button>`;
+      html += `</div>`;
+    }
+  }
+
+  listArea.innerHTML = html;
+}
+
+function browseGoToPage(page) {
+  if (page < 1) return;
+  browsePage = page;
+  browseLoadFiles();
+}
+
+function showDocFromBrowse(docId) {
+  // Fetch content and open in modal — without collection info from search results
+  apiGet(`/api/document/${docId}/content`).then(data => {
+    if (data && !data.error) {
+      currentModalDocId = data.id;
+      currentModalContent = data.content || '';
+      editDocId = data.id;
+      document.getElementById('editDocBtn').style.display = 'inline-block';
+      document.getElementById('modalTitle').textContent = data.title || `Document #${data.id}`;
+      const tagsMeta = data.tags && data.tags.length > 0 ? data.tags.map(t => `<span class="tag-pill" onclick="filterByTag('${escapeJs(t)}')">${escapeHtml(t)}</span>`).join('') : '';
+      const metaHtml = `<span>📁 ${escapeHtml(data.path)}</span><span>📚 ${escapeHtml(data.collection)}</span>${data.created_at ? `<span>📅 Created: ${data.created_at.split('T')[0]}</span>` : ''}${tagsMeta ? `<span>🏷️ ${tagsMeta}</span>` : ''}`;
+      document.getElementById('modalMeta').innerHTML = metaHtml;
+      const contentDiv = document.getElementById('modalContent');
+      if (data.content && data.content.length > 0) {
+        const fullContent = document.createElement('pre');
+        fullContent.style.cssText = 'white-space:pre-wrap;font-size:14px;line-height:1.7';
+        fullContent.textContent = data.content;
+        contentDiv.innerHTML = '';
+        contentDiv.appendChild(fullContent);
+      } else {
+        contentDiv.innerHTML = `<div class="empty-state"><p>${t('no_content')}</p></div>`;
+      }
+      const removeArea = document.getElementById('modalRemoveArea');
+      removeArea.innerHTML = `<button class="btn btn-danger" onclick="removeCurrentDoc()" style="font-size:13px;padding:6px 14px;">🗑️ ${t('remove_doc')}</button>`;
+      document.getElementById('docModal').classList.add('show');
+    } else {
+      showToast(t('load_failed'), 'error');
+    }
+  });
+}
+
+function removeDocFromBrowse(docId, title) {
+  showConfirmDialog(t('confirm_remove'), () => {
+    showConfirmDialog(t('confirm_remove_final') + '\n「' + (title || '') + '」', async () => {
+      try {
+        const r = await fetch(`/api/remove/${docId}`, { method: 'DELETE' });
+        const data = await r.json();
+        if (data.error) showToast('Remove failed: ' + data.error, 'error');
+        else {
+          showToast(t('removed'), 'success');
+          browseLoadFiles();
+          loadFolderTree();
+        }
+      } catch (e) {
+        showToast('Error: ' + e, 'error');
+      }
+    });
+  });
+}
+
+// Browse search filter
+(function() {
+  const searchInput = document.getElementById('browseSearchInput');
+  if (searchInput) {
+    let debounceTimer;
+    searchInput.addEventListener('input', () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => browseLoadFiles(), 300);
+    });
+  }
+})();
+
+// ============ GRAPH VIEW ============
+let graphNetwork = null;
+let graphDataNodes = [];
+let graphDataEdges = [];
+
+function getNodeDegree(id, edges) {
+  let count = 0;
+  edges.forEach(e => { if (e.from === id || e.to === id) count++; });
+  return count;
+}
+
+async function loadGraph() {
+  const container = document.getElementById('graphContainer');
+  const statsEl = document.getElementById('graphStats');
+  const legendEl = document.getElementById('graphLegend');
+  const modeSelect = document.getElementById('graphModeSelect');
+  const mode = modeSelect ? modeSelect.value : 'all';
+
+  // Use toggle state if available, otherwise auto-detect low detail for collection/all modes
+  const detailToggle = document.getElementById('graphDetailToggle');
+  let detail = detailToggle && detailToggle.dataset.detail ? detailToggle.dataset.detail : (mode === 'collection' || mode === 'all' ? 'low' : 'high');
+
+  container.innerHTML = '<div style="text-align:center;padding:80px 24px"><span class="spinner"></span> Loading graph...</div>';
+
+  const data = await apiGet('/api/graph?mode=' + encodeURIComponent(mode) + '&detail=' + detail);
+  if (!data || data.error) {
+    container.innerHTML = `<div class="empty-state"><p>Error loading graph: ${escapeHtml(data?.error || 'unknown')}</p></div>`;
+    return;
+  }
+
+  graphDataNodes = data.nodes || [];
+  graphDataEdges = data.edges || [];
+  const aggregated = data.aggregated === true;
+  const wikiCount = data.wiki_edge_count || 0;
+  const tagCount = data.tag_edge_count || 0;
+  const colCount = data.collection_edge_count || 0;
+  let statsParts = [(aggregated ? data.node_count + ' collections' : data.node_count + ' nodes')];
+  if (wikiCount) statsParts.push(wikiCount + ' wiki');
+  if (tagCount) statsParts.push(tagCount + ' tag');
+  if (colCount) statsParts.push(colCount + ' collection');
+  statsEl.textContent = statsParts.join(' · ');
+  document.getElementById('graphNodeInfo').style.display = 'none';
+
+  if (graphDataNodes.length === 0) {
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">🕸️</div><p>${t('graph_no_links') || 'No links found yet. Click Scan Links to discover connections.'}</p></div>`;
+    legendEl.style.display = 'none';
+    return;
+  }
+
+  // Compute degree for each node
+  const degreeMap = {};
+  graphDataEdges.forEach(e => {
+    degreeMap[e.from] = (degreeMap[e.from] || 0) + 1;
+    degreeMap[e.to] = (degreeMap[e.to] || 0) + 1;
+  });
+  const maxDegree = Math.max(...Object.values(degreeMap), 1);
+
+  // Build vis-network
+  const isAggregated = data.aggregated === true;
+  const nodes = new vis.DataSet(graphDataNodes.map(n => {
+    const isVirtual = n.virtual === true;
+    const docCount = n.doc_count || 0;
+    const deg = degreeMap[n.id] || 0;
+    let base, label, title, value;
+
+    if (isAggregated) {
+      // All nodes are collection clusters
+      label = n.title.replace(/^📁\s*/, '').substring(0, 24) + ' (' + docCount + ')';
+      title = `📁 Collection: ${n.title.replace(/^📁\s*/, '')}\n${docCount} documents\n${deg} connections to other collections`;
+      value = Math.max(15, Math.min(80, docCount * 2));
+      base = { shape: 'square', borderWidth: 2, font: { size: 12, color: 'var(--text-primary)', face: 'monospace' } };
+    } else if (isVirtual) {
+      label = n.title.substring(0, 28);
+      title = `📁 Collection: ${n.title}\n${docCount} documents`;
+      value = 30;
+      base = { shape: 'square', size: 20, borderWidth: 2, font: { size: 11, color: 'var(--text-secondary)', face: 'monospace' } };
+    } else {
+      label = n.title.substring(0, 28);
+      title = `📄 ${n.title}\n📁 ${n.path}\n📚 ${n.collection}\n🔗 ${deg} connections`;
+      value = 5 + (deg / maxDegree) * 20;
+      base = { shape: 'dot', borderWidth: 1 };
+    }
+    return { id: n.id, label, title, group: n.collection || '_default', value, ...base };
+  }));
+
+  const edges = new vis.DataSet(graphDataEdges.map(e => {
+    const isTag = e.type === 'tag';
+    const isCol = e.type === 'collection';
+    return {
+      from: e.from,
+      to: e.to,
+      arrows: isTag || isCol ? '' : 'to',
+      smooth: { type: 'curvedCW', roundness: 0.1 },
+      dashes: isTag || isCol,
+      color: isTag ? { color: '#888', inherit: false } : isCol ? { color: '#669', inherit: false, opacity: 0.4 } : { inherit: 'from' },
+      width: isTag ? 0.8 : isCol ? 0.6 : 1.5,
+      title: isTag ? `Shared tag: ${e.tag || '?'}` : isCol ? `Part of collection: ${e.collection || '?'}` : undefined,
+    };
+  }));
+
+  const groups = getGraphGroups(graphDataNodes);
+  const options = {
+    physics: { solver: 'forceAtlas2Based', forceAtlas2Based: { gravitationalConstant: -40, springLength: 160 } },
+    interaction: { hover: true, tooltipDelay: 200 },
+    edges: { color: { inherit: 'from' }, width: 1.5 },
+    nodes: { shape: 'dot', font: { size: 12, color: 'var(--text-primary)' } },
+    groups,
+  };
+
+  container.innerHTML = '';
+  graphNetwork = new vis.Network(container, { nodes, edges }, options);
+
+  // Click handler: show info panel + open document modal (skip virtual/collection nodes)
+  graphNetwork.on('click', function(params) {
+    if (params.nodes.length > 0) {
+      const nid = params.nodes[0];
+      const node = graphDataNodes.find(n => n.id === nid);
+      showGraphNodeInfo(nid);
+      if (node && !node.virtual) {
+        showDocFromBrowse(nid);
+      }
+    }
+  });
+
+  // Build legend
+  buildGraphLegend(groups, graphDataNodes);
+  document.getElementById('graphResetBtn').style.display = 'none';
+
+  // Show/hide detail toggle
+  if (detailToggle) {
+    if (aggregated) {
+      detailToggle.style.display = 'inline-block';
+      detailToggle.dataset.detail = 'low';
+      detailToggle.textContent = '📂 Show all docs';
+    } else {
+      detailToggle.dataset.detail = 'high';
+      detailToggle.textContent = '📁 By collection';
+      detailToggle.style.display = 'inline-block';
+    }
+  }
+}
+
+function showGraphNodeInfo(nodeId) {
+  const node = graphDataNodes.find(n => n.id === nodeId);
+  if (!node) return;
+  const isVirtual = node.virtual === true;
+  const deg = getNodeDegree(nodeId, graphDataEdges);
+  const panel = document.getElementById('graphNodeInfo');
+  panel.style.display = 'block';
+  if (isVirtual) {
+    const colName = node.collection || (node.title || '').replace(/^📁\s*/, '');
+    panel.innerHTML = `
+      <h4>📁 ${escapeHtml(colName)}</h4>
+      <div class="info-row"><span>Collection</span><span>📚 ${escapeHtml(colName)}</span></div>
+      <div class="info-row"><span>Connected docs</span><span>🔗 ${deg}</span></div>
+      <div class="info-actions">
+        <button class="btn btn-secondary" onclick="focusGraphNode(${nodeId})" style="font-size:13px;padding:4px 12px;">🎯 Focus</button>
+        <button class="btn btn-secondary" onclick="filterGraphByCollection('${escapeJs(colName)}')" style="font-size:13px;padding:4px 12px;">📚 Browse collection</button>
+        <button class="btn btn-secondary" onclick="hideGraphNodeInfo()" style="font-size:13px;padding:4px 12px;">✕ Close</button>
+      </div>`;
+  } else {
+    panel.innerHTML = `
+      <h4>${escapeHtml(node.title || '')}</h4>
+      <div class="info-row"><span>Path</span><span>📁 ${escapeHtml(node.path || '')}</span></div>
+      <div class="info-row"><span>Collection</span><span>📚 ${escapeHtml(node.collection || '')}</span></div>
+      <div class="info-row"><span>Connections</span><span>🔗 ${deg}</span></div>
+      <div class="info-actions">
+        <button class="btn btn-secondary" onclick="focusGraphNode(${nodeId})" style="font-size:13px;padding:4px 12px;">🎯 Focus</button>
+        <button class="btn btn-secondary" onclick="showDocFromBrowse(${nodeId})" style="font-size:13px;padding:4px 12px;">👁️ Re-open</button>
+        <button class="btn btn-secondary" onclick="hideGraphNodeInfo()" style="font-size:13px;padding:4px 12px;">✕ Close</button>
+      </div>`;
+  }
+}
+
+function focusGraphNode(nodeId) {
+  if (!graphNetwork) return;
+  const allNodes = graphNetwork.body.nodeIndices;
+  const connected = new Set([nodeId]);
+  graphDataEdges.forEach(e => {
+    if (e.from === nodeId) connected.add(e.to);
+    if (e.to === nodeId) connected.add(e.from);
+  });
+  const hidden = allNodes.filter(id => !connected.has(id) && id !== nodeId);
+  hidden.forEach(id => { try { graphNetwork.body.nodes[id].options.hidden = true; } catch(e) {} });
+  // Also hide edges not connected to focus node
+  const allEdges = graphNetwork.body.edgeIndices;
+  allEdges.forEach(eId => {
+    try {
+      const edge = graphNetwork.body.edges[eId];
+      const conn = (edge.fromId === nodeId || edge.toId === nodeId || connected.has(edge.fromId) && connected.has(edge.toId));
+      edge.options.hidden = !conn;
+    } catch(_) {}
+  });
+  graphNetwork.setOptions({ physics: false });
+  graphNetwork.selectNodes([nodeId]);
+  graphNetwork.fit({ animation: true });
+  document.getElementById('graphResetBtn').style.display = 'inline-block';
+}
+
+function hideGraphNodeInfo() {
+  document.getElementById('graphNodeInfo').style.display = 'none';
+}
+
+function resetGraphView() {
+  if (!graphNetwork) return;
+  Object.values(graphNetwork.body.nodes).forEach(n => { n.options.hidden = false; });
+  Object.values(graphNetwork.body.edges).forEach(e => { e.options.hidden = false; });
+  graphNetwork.setOptions({ physics: true });
+  graphNetwork.selectNodes([]);
+  graphNetwork.fit({ animation: true });
+  document.getElementById('graphResetBtn').style.display = 'none';
+}
+
+function searchGraphNodes() {
+  if (!graphNetwork) return;
+  const query = document.getElementById('graphSearchInput').value.trim().toLowerCase();
+  if (!query) { resetGraphView(); return; }
+  const matched = new Set();
+  graphDataNodes.forEach(n => {
+    if ((n.title || '').toLowerCase().includes(query) || (n.path || '').toLowerCase().includes(query)) {
+      matched.add(n.id);
+    }
+  });
+  const allNodes = graphNetwork.body.nodeIndices;
+  const hidden = allNodes.filter(id => !matched.has(id));
+  hidden.forEach(id => { try { graphNetwork.body.nodes[id].options.hidden = true; } catch(e) {} });
+  matched.forEach(id => {
+    try { graphNetwork.body.nodes[id].options.hidden = false; } catch(e) {}
+  });
+  graphNetwork.setOptions({ physics: false });
+  if (matched.size > 0) {
+    graphNetwork.fit({ animation: true, nodes: Array.from(matched) });
+  }
+  document.getElementById('graphResetBtn').style.display = 'inline-block';
+}
+
+function getGraphGroups(nodes) {
+  const groups = {};
+  const colors = ['#7B6B5A','#5B8C5A','#C4905A','#5A8C8C','#8C5A8C','#C45A5A','#4A7B9C','#9C7B4A'];
+  const seen = {};
+  let ci = 0;
+  nodes.forEach(n => {
+    const g = n.collection || '_default';
+    if (!seen[g]) { seen[g] = true; groups[g] = { color: { background: colors[ci % colors.length], border: colors[ci % colors.length] }, shape: 'dot' }; ci++; }
+  });
+  return groups;
+}
+
+function buildGraphLegend(groups, nodes) {
+  const legendEl = document.getElementById('graphLegend');
+  const counts = {};
+  nodes.forEach(n => {
+    const g = n.collection || '_default';
+    counts[g] = (counts[g] || 0) + 1;
+  });
+  // Preserve the order from groups (which follows insertion order)
+  let html = '<h4>📚 Collections</h4>';
+  Object.entries(groups).forEach(([name, cfg]) => {
+    const color = cfg.color.background;
+    const count = counts[name] || 0;
+    html += `<div class="graph-legend-item" onclick="filterGraphByCollection('${escapeJs(name)}')" title="Click to filter">
+      <span class="graph-legend-color" style="background:${color}"></span>
+      <span class="graph-legend-name">${escapeHtml(name === '_default' ? 'Uncategorized' : name)} (${count})</span>
+    </div>`;
+  });
+  html += '<div style="margin-top:8px;font-size:11px;color:var(--text-tertiary);padding-top:6px;border-top:1px solid var(--border);cursor:pointer" onclick="resetGraphView()">✕ Clear filter</div>';
+  // Edge type legend
+  html += '<h4 style="margin-top:12px;">🔗 Edges</h4>';
+  html += '<div class="graph-legend-item"><span style="border-top:2px solid var(--text-secondary);width:16px;display:inline-block"></span><span class="graph-legend-name" style="font-size:11px;"> Wiki link (→ arrow)</span></div>';
+  html += '<div class="graph-legend-item"><span style="border-top:2px dashed #888;width:16px;display:inline-block"></span><span class="graph-legend-name" style="font-size:11px;"> Shared tag</span></div>';
+  html += '<div class="graph-legend-item"><span style="border-top:2px dashed #669;width:16px;display:inline-block;opacity:0.5"></span><span class="graph-legend-name" style="font-size:11px;"> Collection edge</span></div>';
+  legendEl.innerHTML = html;
+  legendEl.style.display = 'block';
+}
+
+function filterGraphByCollection(collection) {
+  if (!graphNetwork) return;
+  const allNodes = graphNetwork.body.nodeIndices;
+  const matched = new Set();
+  graphDataNodes.forEach(n => {
+    const g = n.collection || '_default';
+    if (g === collection) matched.add(n.id);
+  });
+  const hidden = allNodes.filter(id => !matched.has(id));
+  hidden.forEach(id => { try { graphNetwork.body.nodes[id].options.hidden = true; } catch(e) {} });
+  matched.forEach(id => { try { graphNetwork.body.nodes[id].options.hidden = false; } catch(e) {} });
+  graphNetwork.setOptions({ physics: false });
+  if (matched.size > 0) graphNetwork.fit({ animation: true, nodes: Array.from(matched) });
+  document.getElementById('graphResetBtn').style.display = 'inline-block';
+}
+
+document.getElementById('scanLinksBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('scanLinksBtn');
+  btn.disabled = true;
+  btn.textContent = 'Scanning...';
+  try {
+    const data = await apiPost('/api/scan-links', {});
+    if (data.error) showToast('Scan failed: ' + data.error, 'error');
+    else showToast(`Scanned ${data.scanned} docs, found ${data.links_found} links`, 'success');
+  } catch (e) {
+    showToast('Error: ' + e, 'error');
+  }
+  btn.disabled = false;
+  btn.textContent = '🔍 ' + t('graph_scan');
+});
+
+document.getElementById('refreshGraphBtn').addEventListener('click', () => {
+  loadGraph();
+});
+
+document.getElementById('graphSearchBtn').addEventListener('click', searchGraphNodes);
+document.getElementById('graphSearchInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') searchGraphNodes();
+});
+document.getElementById('graphResetBtn').addEventListener('click', resetGraphView);
+document.getElementById('graphModeSelect').addEventListener('change', loadGraph);
+
+// Expand/collapse detail toggle
+document.getElementById('graphDetailToggle').addEventListener('click', function() {
+  const btn = this;
+  btn.dataset.detail = btn.dataset.detail === 'low' ? 'high' : 'low';
+  loadGraph();
+});
+
+// ============ BACKLINKS IN DOC MODAL ============
+async function loadBacklinks(docId) {
+  const panel = document.getElementById('modalBacklinks');
+  panel.style.display = 'block';
+  panel.innerHTML = '<span class="spinner"></span> Loading references...';
+  try {
+    const data = await apiGet(`/api/document/${docId}/backlinks`);
+    if (!data || data.error) { panel.style.display = 'none'; return; }
+    let html = '';
+
+    // Incoming (backlinks)
+    html += `<h4>🔗 ${t('backlinks_title') || 'Referenced by'} (${data.incoming.length})</h4>`;
+    if (data.incoming.length === 0) {
+      html += `<div style="color:var(--text-tertiary);font-size:13px;padding:4px 0">${t('backlinks_none') || 'No backlinks'}</div>`;
+    } else {
+      data.incoming.forEach(bl => {
+        const label = bl.from_title || bl.path || `Doc#${bl.from_id}`;
+        html += `<div class="backlink-item" onclick="showDocFromBrowse(${bl.from_id})">📄 ${escapeHtml(label)}</div>`;
+      });
+    }
+
+    // Outgoing
+    html += `<h4 style="margin-top:12px;">➡️ ${t('outgoing_title') || 'Links to'} (${data.outgoing.length})</h4>`;
+    if (data.outgoing.length === 0) {
+      html += `<div style="color:var(--text-tertiary);font-size:13px;padding:4px 0">${t('outgoing_none') || 'No outgoing links'}</div>`;
+    } else {
+      data.outgoing.forEach(ol => {
+        if (ol.resolved) {
+          const label = ol.doc_title || ol.to_title || `Doc#${ol.to_id}`;
+          html += `<div class="backlink-item" onclick="showDocFromBrowse(${ol.to_id})">📄 ${escapeHtml(label)}</div>`;
+        } else {
+          html += `<div class="outgoing-link"><span class="unresolved">[[${escapeHtml(ol.to_title)}]] (unresolved)</span></div>`;
+        }
+      });
+    }
+
+    panel.innerHTML = html;
+  } catch (e) {
+    panel.style.display = 'none';
+  }
+}
+
+// Patch showDocFromBrowse to include backlinks + split mode
+const _origShowDocFromBrowse = showDocFromBrowse;
+showDocFromBrowse = function(docId) {
+  if (splitMode && docId !== currentModalDocId) {
+    loadRightPane(docId);
+    return;
+  }
+  _origShowDocFromBrowse(docId);
+  if (docId) loadBacklinks(docId);
+};
+
+// ============ TAG CLOUD ============
+let currentTagFilter = '';
+
+async function loadTagCloud() {
+  const cloudEl = document.getElementById('tagCloud');
+  const countEl = document.getElementById('tagCount');
+  if (!cloudEl) return;
+  const data = await apiGet('/api/tags');
+  if (!data || data.error) { cloudEl.innerHTML = ''; return; }
+  countEl.textContent = `(${data.total})`;
+  if (data.tags.length === 0) {
+    cloudEl.innerHTML = '<div style="font-size:12px;color:var(--text-tertiary);padding:4px 0">No tags found</div>';
+    return;
+  }
+  const maxCount = Math.max(...data.tags.map(t => t.count), 1);
+  cloudEl.innerHTML = data.tags.map(t => {
+    const size = 0.75 + (t.count / maxCount) * 0.65;
+    const active = currentTagFilter === t.name ? ' active' : '';
+    return `<span class="tag-pill${active}" style="font-size:${size}em" onclick="filterByTag('${escapeJs(t.name)}')">${escapeHtml(t.name)} (${t.count})</span>`;
+  }).join('');
+}
+
+function filterByTag(tag) {
+  if (currentTagFilter === tag) {
+    currentTagFilter = '';
+    document.querySelectorAll('.tag-pill').forEach(p => p.classList.remove('active'));
+    browseSelectCollection(currentBrowseCollection || '');
+    return;
+  }
+  currentTagFilter = tag;
+  loadTagCloud();
+  // Navigate to browse and filter
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.querySelector('[data-page="browse"]')?.classList.add('active');
+  document.querySelectorAll('.page-section').forEach(s => s.classList.remove('active'));
+  document.getElementById('page-browse')?.classList.add('active');
+  // Load all docs (no collection filter), then client-side filter by tag
+  apiGet(`/api/documents-by-tag?tag=${encodeURIComponent(tag)}`).then(data => {
+    const listArea = document.getElementById('fileListArea');
+    if (!data || data.error || data.count === 0) {
+      listArea.innerHTML = `<div class="empty-state"><p>No documents tagged "${escapeHtml(tag)}"</p></div>`;
+      return;
+    }
+    document.getElementById('browseTitle').textContent = `🏷️ ${escapeHtml(tag)} (${data.count})`;
+    let html = `<div style="margin-bottom:8px;font-size:13px;color:var(--text-secondary)">${data.count} documents tagged "${escapeHtml(tag)}"</div>`;
+    data.documents.forEach(doc => {
+      const tagsHtml = doc.tags && doc.tags.length ? doc.tags.map(t => `<span class="tag-pill tag-pill-sm">${escapeHtml(t)}</span>`).join('') : '';
+      html += `<div class="doc-row">
+        <div style="flex:1" onclick="showDocFromBrowse(${doc.id})">
+          <div class="doc-row-title">${escapeHtml(doc.title)}</div>
+          <div class="doc-row-path">📄 ${escapeHtml(doc.path)}</div>
+          ${tagsHtml ? `<div style="margin-top:4px">${tagsHtml}</div>` : ''}
+        </div>
+        <div class="doc-row-actions">
+          <button class="doc-row-btn" onclick="showDocFromBrowse(${doc.id})">👁️ ${currentLang === 'zh_TW' ? '查看' : currentLang === 'zh_CN' ? '查看' : currentLang === 'ja' ? '表示' : 'View'}</button>
+        </div>
+      </div>`;
+    });
+    listArea.innerHTML = html;
+  });
+}
+
+// Scan tags button
+document.addEventListener('DOMContentLoaded', () => {
+  const scanBtn = document.getElementById('scanTagsBtn');
+  if (scanBtn) {
+    scanBtn.addEventListener('click', async () => {
+      scanBtn.disabled = true;
+      scanBtn.textContent = 'Scanning...';
+      try {
+        const data = await apiPost('/api/scan-tags', {});
+        if (data.error) showToast('Scan tags failed: ' + data.error, 'error');
+        else {
+          showToast(`Scanned ${data.scanned} docs, ${data.tagged} tagged`, 'success');
+          loadTagCloud();
+          browseLoadFiles();
+        }
+      } catch (e) { showToast('Error: ' + e, 'error'); }
+      scanBtn.disabled = false;
+      scanBtn.textContent = '🏷️ ' + (t('scan_tags') || 'Scan Tags');
+    });
+  }
+});
+
+// On browse page load, also load tag cloud
+const _origBrowseSelectCollection = browseSelectCollection;
+browseSelectCollection = function(collName) {
+  _origBrowseSelectCollection(collName);
+  loadTagCloud();
+};
+
+// ============ NAVIGATION ============
+document.querySelectorAll('.nav-item[data-page]').forEach(item => {
+  item.addEventListener('click', () => {
+    const page = item.getAttribute('data-page');
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    item.classList.add('active');
+    document.querySelectorAll('.page-section').forEach(s => s.classList.remove('active'));
+    const target = document.getElementById(`page-${page}`); if (target) target.classList.add('active');
+    if (page === 'browse') { loadFolderTree(); browseSelectCollection(''); }
+    if (page === 'graph') { loadGraph(); }
+    if (page === 'stats') loadStats();
+    if (page === 'settings') loadSettings();
+  });
+});
+
+// Escape closes modal (skip when EasyMDE is editing)
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && editorMode !== 'edit') closeDocModal();
+});
+
+// ============ SEARCH RESULTS PARSING ============
+function parseSearchResults(text) {
+  const results = []; let cur = null;
+  if (!text) return results;
+  text.split('\n').forEach(line => {
+    const hm = line.match(/^\[(\d+)\/(\d+)\]\s+(.+)$/);
+    if (hm) { if(cur) results.push(cur); cur={title:hm[3].trim(),index:parseInt(hm[1])}; }
+    else if(line.trim().startsWith('File:')&&cur) cur.path=line.replace('File:','').trim();
+    else if(line.trim().startsWith('Collection:')&&cur) cur.collection=line.replace('Collection:','').trim();
+    else if(line.trim().startsWith('Score:')&&cur){try{cur.score=parseFloat(line.split(':')[1].trim());}catch(e){}}
+    else if(cur&&!line.startsWith('[')&&!line.match(/^(File|Collection|Score):/)&&line.trim()) cur.content=(cur.content||'')+' '+line;
+  });
+  if(cur) results.push(cur);
+  return results;
+}
+
+function escapeHtml(s){if(!s)return'';const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
+function escapeJs(s){if(!s)return'';return s.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\"');}
+function stripHtml(t){return t.replace(/<[^>]*>/g,'').replace(/\n{3,}/g,'\n\n');}
+
+function renderResults(cid, results) {
+  const c = document.getElementById(cid); if(!c) return;
+  if(results.length===0){c.innerHTML=`<div class="empty-state"><div class="empty-icon">🔍</div><p>${t('no_results')}</p></div>`;return;}
+  let html='';
+  results.forEach((doc,i)=>{
+    const score=doc.score||doc.similarity||(1-i*0.1).toFixed(3);
+    const preview=doc.content?stripHtml(doc.content).substring(0,250):'';
+    html+=`<div class="result-item" onclick='showDocDetail(${JSON.stringify(JSON.parse(JSON.stringify(doc))).replace(/'/g,'&#39;')})'>
+      <div class="result-header"><span class="result-title">${escapeHtml(doc.title)}</span><span class="result-score">${score}</span></div>
+      ${doc.collection?`<span class="result-collection">${escapeHtml(doc.collection)}</span>`:''}
+      <div class="result-path">📁 ${escapeHtml(doc.path||'')}</div>
+      ${preview?`<div class="result-preview">${escapeHtml(preview)}...</div>`:''}</div>`;
+  });
+  c.innerHTML=html;
+}
+
+// ============ DOC DETAIL MODAL ============
+let currentModalDocId = null;
+let currentModalContent = '';
+let splitMode = false;
+let rightDocId = null;
+let rightDocData = null;
+
+function toggleSplitView() {
+  splitMode = !splitMode;
+  const modalBox = document.querySelector('.modal-box');
+  const paneDivider = document.getElementById('paneDivider');
+  const paneRight = document.getElementById('paneRight');
+  const splitBtn = document.getElementById('splitViewBtn');
+  if (splitMode) {
+    modalBox.classList.add('split');
+    paneDivider.style.display = 'block';
+    paneRight.style.display = 'flex';
+    splitBtn.innerHTML = '📐 <span data-i18n="btn_unsplit">Unsplit</span>';
+  } else {
+    modalBox.classList.remove('split');
+    paneDivider.style.display = 'none';
+    paneRight.style.display = 'none';
+    rightDocId = null;
+    rightDocData = null;
+    splitBtn.innerHTML = '🔄 <span data-i18n="btn_split">Split</span>';
+  }
+}
+
+function openRightDocInMainPane() {
+  if (!rightDocId) return;
+  toggleSplitView();
+  showDocDetail(rightDocId);
+}
+
+async function loadRightPane(id) {
+  if (typeof id === 'object' && id.id) id = id.id;
+  const data = await apiGet(`/api/document/${id}/content`);
+  if (!data || data.error) { showToast('Failed to load right pane', 'error'); return; }
+  rightDocId = data.id;
+  rightDocData = data;
+  document.getElementById('paneRightPlaceholder').style.display = 'none';
+  document.getElementById('paneRightHeader').style.display = 'block';
+  document.getElementById('paneRightHeader').textContent = `📄 ${data.title || `Doc #${data.id}`}`;
+  const contentDiv = document.getElementById('modalContentRight');
+  if (data.content && data.content.length > 0) {
+    const pre = document.createElement('pre');
+    pre.style.cssText = 'white-space:pre-wrap;font-size:14px;line-height:1.7';
+    pre.textContent = data.content;
+    contentDiv.innerHTML = '';
+    contentDiv.appendChild(pre);
+  } else {
+    contentDiv.innerHTML = `<div class="empty-state"><p>No content</p></div>`;
+  }
+}
+
+async function showDocDetail(id) {
+  if (splitMode) {
+    let docId = null;
+    if (typeof id === 'number') docId = id;
+    else if (typeof id === 'object' && id.id) docId = id.id;
+    if (docId && docId !== currentModalDocId) { loadRightPane(docId); return; }
+  }
+  let docData = null;
+  // Strategy 1: direct doc ID (number)
+  if (typeof id === 'number') {
+    const data = await apiGet(`/api/document/${id}/content`);
+    if (data && !data.error) { docData = data; }
+  }
+  // Strategy 2: object with id field
+  if (!docData && typeof id === 'object' && id.id) {
+    const data = await apiGet(`/api/document/${id.id}/content`);
+    if (data && !data.error) { docData = data; }
+  }
+  // Strategy 3: object with path+collection → resolve-id
+  if (!docData && typeof id === 'object' && id.path && id.collection) {
+    try {
+      const resolveResult = await apiPost('/api/search/resolve-id', { collection: id.collection, path: id.path });
+      if (resolveResult && !resolveResult.error && resolveResult.id) {
+        const data = await apiGet(`/api/document/${resolveResult.id}/content`);
+        if (data && !data.error) { docData = data; }
+      }
+    } catch (e) {}
+  }
+  // Strategy 4: try as ID string or fall back to old show endpoint
+  if (!docData && typeof id === 'string' && /^\d+$/.test(id)) {
+    const data = await apiGet(`/api/document/${id}/content`);
+    if (data && !data.error) { docData = data; }
+  }
+  if (!docData) {
+    // Last resort: try old show endpoint (text output)
+    const nid = typeof id === 'number' ? id : (id && id.id) || id;
+    const r2 = await apiGet(`/api/document/${nid}`);
+    if (r2 && !r2.error) {
+      const output = r2.output || '';
+      let d = { title: '', path: '', collection: '' };
+      output.split('\n').forEach(l => {
+        if (l.startsWith('Title: ')) d.title = l.replace('Title:', '').trim();
+        else if (l.startsWith('Path: ')) d.path = l.replace('Path:', '').trim();
+        else if (l.startsWith('Collection: ')) d.collection = l.replace('Collection:', '').trim();
+      });
+      docData = { id: nid, ...d, content: output.split('--- Content ---')[1] || '' };
+    }
+  }
+  if (!docData) { showToast(t('toast_failed_load'), 'error'); return; }
+
+  if (!docData) return;
+
+  currentModalDocId = docData.id;
+  currentModalContent = docData.content || '';
+  editDocId = docData.id;
+  document.getElementById('editDocBtn').style.display = 'inline-block';
+
+  document.getElementById('modalTitle').textContent = docData.title || `Document #${docData.id}`;
+
+  // Metadata area
+  const tagsMeta = docData.tags && docData.tags.length > 0 ? docData.tags.map(t => `<span class="tag-pill" onclick="filterByTag('${escapeJs(t)}')">${escapeHtml(t)}</span>`).join('') : '';
+  const metaHtml = `
+    <span>📁 ${escapeHtml(docData.path)}</span>
+    <span>📚 ${escapeHtml(docData.collection)}</span>
+    ${docData.created_at ? `<span>📅 Created: ${docData.created_at.split('T')[0]}</span>` : ''}
+    ${tagsMeta ? `<span>🏷️ ${tagsMeta}</span>` : ''}
+  `;
+  document.getElementById('modalMeta').innerHTML = metaHtml;
+
+  // Content area — render as preformatted text with line wrapping
+  const contentDiv = document.getElementById('modalContent');
+  if (docData.content && docData.content.length > 0) {
+    const fullContent = document.createElement('pre');
+    fullContent.style.cssText = 'white-space:pre-wrap;font-size:14px;line-height:1.7';
+    fullContent.textContent = docData.content;
+    contentDiv.innerHTML = '';
+    contentDiv.appendChild(fullContent);
+  } else {
+    contentDiv.innerHTML = `<div class="empty-state"><p>${currentLang === 'zh_TW' ? '沒有內容' : currentLang === 'zh_CN' ? '没有内容' : currentLang === 'ja' ? 'コンテンツがありません' : 'No content available'}</p></div>`;
+  }
+
+  // Remove and Re-index buttons
+  const removeArea = document.getElementById('modalRemoveArea');
+  removeArea.innerHTML = `
+    <button class="btn btn-secondary" onclick="reindexCurrentDoc()" style="font-size:13px;padding:6px 14px;margin-right:8px;">🔄 ${currentLang === 'zh_TW' ? '重新索引' : currentLang === 'zh_CN' ? '重新索引' : currentLang === 'ja' ? '再インデックス' : 'Re-index'}</button>
+    <button class="btn btn-danger" onclick="removeCurrentDoc()" style="font-size:13px;padding:6px 14px;">🗑️ ${currentLang === 'zh_TW' ? '移除此文件' : currentLang === 'zh_CN' ? '移除此文档' : currentLang === 'ja' ? 'このドキュメントを削除' : 'Remove this document'}</button>`;
+
+  document.getElementById('docModal').classList.add('show');
+  if (currentModalDocId) loadBacklinks(currentModalDocId);
+}
+
+function copyDocContent() {
+  const text = currentModalContent || document.getElementById('modalContent').textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    showToast(t('toast_copied'), 'success');
+  }).catch(() => {
+    const contentDiv = document.getElementById('modalContent');
+    const range = document.createRange();
+    range.selectNodeContents(contentDiv);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    showToast(t('toast_copy_manual'), 'info');
+  });
+}
+
+// ============ CUSTOM CONFIRM DIALOG ============
+let confirmCallback = null;
+
+function showConfirmDialog(message, callback) {
+  document.getElementById('confirmMsg').textContent = message;
+  confirmCallback = callback;
+  document.getElementById('confirmModal').classList.add('show');
+}
+
+document.getElementById('confirmOkBtn').addEventListener('click', () => {
+  const cb = confirmCallback;
+  confirmCallback = null;
+  document.getElementById('confirmModal').classList.remove('show');
+  if (cb) cb();
+});
+document.getElementById('confirmCancelBtn').addEventListener('click', () => {
+  confirmCallback = null;
+  document.getElementById('confirmModal').classList.remove('show');
+});
+document.getElementById('confirmModal').addEventListener('click', function(e) {
+  if (e.target === this) { confirmCallback = null; this.classList.remove('show'); }
+});
+
+function removeCurrentDoc() {
+  if (!currentModalDocId) return;
+  showConfirmDialog(t('confirm_remove'), () => {
+    const title = document.getElementById('modalTitle').textContent;
+    showConfirmDialog(t('confirm_remove_final') + '\n「' + title + '」', () => {
+      fetch(`/api/remove/${currentModalDocId}`, { method: 'DELETE' })
+    .then(r => r.json())
+  .then(data => {
+      closeDocModal();
+      if (data.error) showToast(t('toast_remove_failed') + ': ' + data.error, 'error');
+      else {
+        showToast(t('toast_removed'), 'success');
+        if (document.getElementById('page-browse')?.classList.contains('active')) {
+          browseLoadFiles();
+        }
+      }
+    })
+    .catch(e => showToast(t('toast_error') + ': ' + e, 'error'));
+    });
+  });
+}
+
+function reindexCurrentDoc() {
+  if (!currentModalDocId) return;
+  const title = document.getElementById('modalTitle').textContent;
+  showConfirmDialog(`Re-index "${title}"? This will remove and re-add the document from its original file path.`, async () => {
+    closeDocModal();
+    showToast('Re-indexing...', 'info');
+    try {
+      const r = await fetch(`/api/document/${currentModalDocId}/reindex`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ embed: true })
+      });
+      const data = await r.json();
+      if (data.success) {
+        let msg = `Re-indexed: ${data.steps.length} steps`;
+        if (data.embed && data.embed.done !== undefined) msg += `, ${data.embed.done} chunks embedded`;
+        showToast(msg, 'success');
+      } else {
+        showToast('Re-index failed: ' + (data.error || 'unknown'), 'error');
+      }
+    } catch (e) {
+      showToast('Error: ' + e, 'error');
+    }
+    if (document.getElementById('page-browse')?.classList.contains('active')) {
+      browseLoadFiles();
+      loadFolderTree();
+    }
+  });
+}
+
+// ============ NAVIGATION ============
+document.querySelectorAll('.nav-item[data-page]').forEach(item => {
+  item.addEventListener('click', () => {
+    const page=item.getAttribute('data-page');
+    document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));item.classList.add('active');
+    document.querySelectorAll('.page-section').forEach(s=>s.classList.remove('active'));
+    const target=document.getElementById(`page-${page}`); if(target)target.classList.add('active');
+    if(page==='browse'){loadFolderTree();browseSelectCollection('');}if(page==='stats')loadStats();
+  });
+});
+
+// ============ UNIFIED SEARCH MODE ============
+let currentSearchMode = 'keyword';
+
+function switchSearchMode(mode) {
+  currentSearchMode = mode;
+  document.querySelectorAll('.mode-pill').forEach(p => p.classList.toggle('active', p.dataset.mode === mode));
+  const iconMap = { keyword: '🔍', semantic: '🧠', hybrid: '⚡' };
+  document.getElementById('modeSearchIcon').textContent = iconMap[mode] || '🔍';
+  document.getElementById('intentField').style.display = mode === 'hybrid' ? 'block' : 'none';
+  document.getElementById('searchModeLabel').textContent =
+    mode === 'keyword' ? `🔍 ${t('nav_keyword')}` :
+    mode === 'semantic' ? `🧠 ${t('nav_semantic')}` :
+    `⚡ ${t('nav_hybrid')}`;
+}
+
+// ============ UNIFIED SEARCH HANDLERS ============
+document.getElementById('unifiedSearchBtn').addEventListener('click', doUnifiedSearch);
+document.getElementById('unifiedSearchInput').addEventListener('keydown', e => { if (e.key === 'Enter') doUnifiedSearch(); });
+
+async function doUnifiedSearch() {
+  const query = document.getElementById('unifiedSearchInput').value.trim();
+  if (!query) return;
+  document.getElementById('unifiedSearchResults').innerHTML = `<div style="text-align:center;padding:24px"><span class="spinner"></span> ${t('loading')}</div>`;
+  const coll = document.getElementById('collFilterUnified').value || null;
+  const intent = document.getElementById('unifiedIntentInput').value.trim();
+
+  let data;
+  if (currentSearchMode === 'semantic') {
+    data = await apiGet(`/api/search/semantic?q=${encodeURIComponent(query)}${coll ? `&collection=${coll}` : ''}`);
+ } else if (currentSearchMode === 'hybrid') {
+    const hybridBody = { query, intent: intent || null };
+    if (coll) hybridBody.collection = coll;
+    data = await apiPost('/api/search/hybrid', hybridBody);
+  } else {
+    data = await apiGet(`/api/search?q=${encodeURIComponent(query)}${coll ? `&collection=${coll}` : ''}`);
+  }
+
+  if (currentSearchMode === 'hybrid') {
+    let html = '';
+    if (data.bm25_results) html += `<h3 style="margin-bottom:8px">BM25 Results</h3><pre style="background:var(--code-bg);padding:16px;border-radius:var(--radius-sm);font-size:13px;overflow-x:auto">${escapeHtml(data.bm25_results.substring(0,4000))}</pre>`;
+    if (data.semantic_results) html += `<h3 style="margin:16px 0 8px">Semantic Results</h3><pre style="background:var(--code-bg);padding:16px;border-radius:var(--radius-sm);font-size:13px;overflow-x:auto">${escapeHtml(data.semantic_results.substring(0,4000))}</pre>`;
+    document.getElementById('unifiedSearchResults').innerHTML = html || '<div class="empty-state">No results</div>';
+  } else if (data.structured && data.structured.length > 0) {
+    // Use structured results with doc IDs for clickable search results
+    renderResults('unifiedSearchResults', data.structured);
+  } else {
+    renderResults('unifiedSearchResults', parseSearchResults(data.output || ''));
+  }
+}
+
+// ============ STATS ============
+async function loadStats(){
+  const data=await apiGet('/api/status'); if(!data||data.error)return;
+  // Use structured JSON fields directly (not raw text parsing)
+  let docs=data.documents||0, contentEntries=data.content_entries||0, vectors=data.vector_chunks||0, dbSize=data.db_size_mb||0;
+  const labels = {
+    en: ['Documents','Content Entries','Vector Chunks','DB Size (MB)'],
+    zh_TW: ['文件數','內容條目','向量區塊','資料庫大小 (MB)'],
+    zh_CN: ['文档数','内容条目','向量区块','数据库大小 (MB)'],
+    ja: ['ドキュメント','コンテンツエントリ','ベクターチャンク','DBサイズ(MB)'],
+    ko: ['문서','컨텐츠 항목','벡터 청크','DB 크기(MB)']
+  };
+  const l = labels[currentLang] || labels.en;
+  document.getElementById('statsGrid').innerHTML=`<div class="stat-card"><div class="stat-value">${docs}</div><div class="stat-label">${l[0]}</div></div><div class="stat-card"><div class="stat-value">${contentEntries}</div><div class="stat-label">${l[1]}</div></div><div class="stat-card"><div class="stat-value">${vectors}</div><div class="stat-label">${l[2]}</div></div><div class="stat-card"><div class="stat-value">${dbSize.toFixed(1)}</div><div class="stat-label">${l[3]}</div></div>`;
+}
+
+// ============ ADD DOCUMENTS — Win11-style multi-file picker ==========
+let selectedPaths = []; // [{path, size}]
+
+function renderFileList() {
+  const list = document.getElementById('selectedFilesList');
+  if (selectedPaths.length === 0) {
+    list.innerHTML = `<div class="empty-file-list" data-i18n="add_no_files">No files selected</div>`;
+    return;
+  }
+  let html = '';
+  selectedPaths.forEach((item, i) => {
+    const icon = item.isDirectory ? '📁' : getFileIcon(item.name);
+    const sizeStr = formatSize(item.size || (item.isDirectory ? -1 : 0));
+    html += `<div class="file-row">
+      <span class="file-icon">${icon}</span>
+      <span class="file-name" title="${escapeHtml(item.path)}">${escapeHtml(item.isDirectory ? item.name + '/' : item.name)}</span>
+      ${sizeStr !== '' ? `<span class="file-size">${sizeStr}</span>` : ''}
+      <span class="file-remove" onclick="removeSelectedFile(${i})" title="${t('btn_remove')}">×</span>
+    </div>`;
+  });
+  list.innerHTML = html;
+}
+
+function getFileIcon(name) {
+  if (!name) return '📄';
+  const ext = name.split('.').pop().toLowerCase();
+  const icons = { md: '📝', txt: '📃', rst: '📝', py: '🐍', js: '📜', html: '🌐', css: '🎨', json: '{ }', xml: '📋' };
+  return icons[ext] || '📄';
+}
+
+function formatSize(bytes) {
+  if (bytes < 0) return ''; // directory, no size
+  if (bytes === 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let i = 0;
+  while (bytes >= 1024 && i < units.length - 1) { bytes /= 1024; i++; }
+  return `${bytes.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+function removeSelectedFile(index) {
+  selectedPaths.splice(index, 1);
+  renderFileList();
+}
+
+// Pick individual files (multiple)
+document.getElementById('pickFilesBtn').addEventListener('click', () => {
+  const input = document.getElementById('fileInput');
+  input.removeAttribute('webkitdirectory');
+  input.click();
+});
+
+// Pick entire folder
+document.getElementById('pickFolderBtn').addEventListener('click', () => {
+  const input = document.getElementById('fileInput');
+  input.setAttribute('webkitdirectory', '');
+  input.click();
+});
+
+// Handle file/folder selection from native dialog
+document.getElementById('fileInput').addEventListener('change', (e) => {
+  const files = e.target.files;
+  if (!files) return;
+  for (let i = 0; i < files.length; i++) {
+    const fullPath = files[i].webkitRelativePath || files[i].name;
+    const parts = fullPath.split('/');
+    const name = parts[parts.length - 1];
+    selectedPaths.push({ path: fullPath, name, size: files[i].size, isDirectory: false, file: files[i] });
+  }
+  renderFileList();
+  e.target.value = '';
+});
+
+// Drag & drop support on the picker area
+const pickerArea = document.getElementById('filePickerArea');
+pickerArea.addEventListener('dragover', (e) => { e.preventDefault(); pickerArea.classList.add('dragover'); });
+pickerArea.addEventListener('dragleave', () => { pickerArea.classList.remove('dragover'); });
+pickerArea.addEventListener('drop', async (e) => {
+  e.preventDefault();
+  pickerArea.classList.remove('dragover');
+  const items = e.dataTransfer.items;
+  if (!items) return;
+
+  // Use File System Access API if available, otherwise fall back to clipboard paste
+  for (let i = 0; i < items.length; i++) {
+    const entry = items[i].webkitGetAsEntry?.();
+    if (!entry) continue;
+    await readEntry(entry);
+  }
+});
+
+async function readEntry(entry) {
+  if (entry.isFile) {
+    const file = await new Promise(resolve => entry.file(resolve));
+    selectedPaths.push({ path: file.name, name: file.name, size: file.size, isDirectory: false, file });
+  } else if (entry.isDirectory) {
+    // Read directory contents recursively
+    const dirReader = entry.createReader();
+    const entries = await new Promise(resolve => dirReader.readEntries(resolve));
+    for (const e of entries) {
+      await readEntry(e);
+    }
+  }
+  renderFileList();
+}
+
+// Paste paths from clipboard (Ctrl+V in the paste input area)
+document.getElementById('pastePathsInput').addEventListener('keydown', async (e) => {
+  if (e.key !== 'Enter') return;
+  const text = e.target.value.trim();
+  if (!text) return;
+
+  // Split by newlines or commas
+  const paths = text.split(/[\n,]+/).map(p => p.trim()).filter(Boolean);
+  for (const path of paths) {
+    selectedPaths.push({ path, name: path.split(/[\\/]/).pop(), size: 0, isDirectory: false });
+  }
+  renderFileList();
+  e.target.value = '';
+});
+
+// Also support Ctrl+V anywhere on the add-docs page to paste paths
+document.getElementById('page-add-docs').addEventListener('paste', async (e) => {
+  const text = e.clipboardData.getData('text');
+  if (!text || !text.includes('/') && !text.includes('\\')) return; // likely not a path
+
+  const paths = text.split(/[\n,]+/).map(p => p.trim()).filter(Boolean);
+  for (const path of paths) {
+    selectedPaths.push({ path, name: path.split(/[\\/]/).pop(), size: 0, isDirectory: false });
+  }
+  renderFileList();
+  e.preventDefault();
+});
+
+document.getElementById('addBtn').addEventListener('click', async () => {
+  if (selectedPaths.length === 0) return showToast(t('add_no_files') || 'No files selected','error');
+  const collName = document.getElementById('addCollName').value.trim();
+  const doEmbed = document.getElementById('addAutoEmbed').checked;
+
+  // Show progress bar
+  const progressWrap = document.getElementById('addProgressWrap');
+  const progressBar = document.getElementById('addProgressBar');
+  const progressLabel = document.getElementById('addProgressLabel');
+  const progressCount = document.getElementById('addProgressCount');
+  progressWrap.style.display = 'block';
+  progressBar.style.width = '0%';
+  progressLabel.textContent = 'Uploading...';
+
+  const hasFiles = selectedPaths.some(p => p.file);
+
+  let data;
+  if (hasFiles) {
+    // Upload files via FormData
+    const form = new FormData();
+    selectedPaths.forEach(p => {
+      if (p.file) form.append('files', p.file, p.name);
+    });
+    if (collName) form.append('collection', collName);
+    form.append('embed', doEmbed ? 'true' : 'false');
+    form.append('recursive', document.getElementById('addRecursive').checked ? 'true' : 'false');
+
+    try {
+      const r = await fetch('/api/upload', { method: 'POST', body: form });
+      data = await r.json();
+    } catch (e) {
+      data = { error: e.message };
+    }
+  } else {
+    // Server-side paths: use existing add API
+    const pathsOnly = selectedPaths.map(p => p.path);
+    data = await apiPost('/api/add', { paths: pathsOnly, collection: collName || null, recursive: document.getElementById('addRecursive').checked });
+  }
+
+  // Save context description if provided
+  const ctxDesc = document.getElementById('addCtxDesc').value.trim();
+  if (ctxDesc && collName) {
+    await apiPost('/api/context', { collection: collName, description: ctxDesc });
+  }
+
+  if (data.error) {
+    progressLabel.textContent = 'Failed';
+    document.getElementById('addResult').innerHTML = `<div class="card" style="border-left:3px solid var(--error)"><strong>Error:</strong> ${escapeHtml(data.error)}</div>`;
+    showToast('Failed', 'error');
+    return;
+  }
+
+  // Show results
+  progressBar.style.width = '100%';
+  progressLabel.textContent = t('add_done') || 'Complete!';
+  progressCount.textContent = `${data.added}/${data.total}`;
+
+  let resultHtml = '';
+  if (data.errors && data.errors.length > 0) {
+    resultHtml = `<div class="card"><p><strong>${t('add_summary')||'Summary'}:</strong> ${data.added} of ${data.total} added</p>`;
+    resultHtml += '<h4 style="margin:12px 0 8px;color:var(--warning)">' + (t('add_errors') || 'Errors:') + '</h4><ul>';
+    data.errors.forEach(err => {
+      resultHtml += `<li>${escapeHtml(err.path || err.file)} — ${escapeHtml(err.error)}</li>`;
+    });
+    resultHtml += '</ul></div>';
+  } else {
+    resultHtml = `<div class="card"><p><strong>✓</strong> ${t('add_success') || 'Added!'}: ${data.added} of ${data.total} files indexed.</p></div>`;
+  }
+
+  document.getElementById('addResult').innerHTML = resultHtml;
+  showToast(`${data.added}/${data.total}`, 'success');
+  loadFolderTree();
+
+  // Start embed progress polling if async embed was triggered
+  if (data.embed_job_id) {
+    const embedWrap = document.getElementById('embedProgressWrap');
+    const embedBar = document.getElementById('embedProgressBar');
+    const embedCount = document.getElementById('embedProgressCount');
+    const embedLabel = document.getElementById('embedProgressLabel');
+    const embedResult = document.getElementById('embedProgressResult');
+    embedWrap.style.display = 'block';
+    embedBar.style.width = '0%';
+    embedLabel.textContent = '⏳ Embedding chunks...';
+    embedCount.textContent = '0 / ' + (data.embed_total || '?');
+
+    let pollTimer = setInterval(async () => {
+      try {
+        const state = await apiGet(`/api/progress/${data.embed_job_id}`);
+        if (!state || state.error || state.status === 'unknown') {
+          clearInterval(pollTimer);
+          embedLabel.textContent = '⚠️ Embed failed';
+          embedResult.textContent = 'Error checking progress';
+          return;
+        }
+        const total = state.total || 1;
+        const current = state.current || 0;
+        const pct = Math.min(100, Math.round((current / total) * 100));
+        embedBar.style.width = pct + '%';
+        embedCount.textContent = `${current} / ${total}`;
+
+        if (state.status === 'done' || state.status === 'error' || state.status === 'failed') {
+          clearInterval(pollTimer);
+          embedBar.style.width = '100%';
+          embedLabel.textContent = '✅ Embedding complete';
+          embedCount.textContent = `${state.done || 0} chunks embedded`;
+          if (state.file_errors && state.file_errors.length > 0) {
+            let errHtml = '<div style="margin-top:8px;font-size:12px;color:var(--warning)">Errors:</div><ul style="font-size:12px">';
+            state.file_errors.forEach(e => { errHtml += `<li>${escapeHtml(e.file || '')}: ${escapeHtml(e.error)}</li>`; });
+            errHtml += '</ul>';
+            embedResult.innerHTML = errHtml;
+          } else {
+            embedResult.textContent = `${state.done || 0} chunks embedded successfully`;
+          }
+        }
+      } catch (e) {
+        clearInterval(pollTimer);
+        embedLabel.textContent = '⚠️ Error polling progress';
+      }
+    }, 500);
+  }
+});
+
+// Initialize file list
+renderFileList();
+
+// ============ EXPAND ============
+document.getElementById('expandBtn').addEventListener('click',async()=>{
+  const query=document.getElementById('expandQuery').value.trim(),intent=document.getElementById('expandIntent').value.trim();
+  if(!query)return showToast(t('toast_please_query'),'error');
+  document.getElementById('expandResult').innerHTML=`<div style="text-align:center;padding:24px"><span class="spinner"></span> ${t('loading')}</div>`;
+  const data=await apiPost('/api/expand',{query,intent});
+  if(data.error){document.getElementById('expandResult').innerHTML=`<div class="card" style="border-left:3px solid var(--error)"><strong>Error:</strong> ${escapeHtml(data.error)}</div>`;return;}
+  let html=`<h3 style="margin-bottom:8px">Query: "${escapeHtml(query)}"</h3>`;
+  if(data.intent)html+=`<p style="color:var(--text-secondary)">Intent: ${escapeHtml(data.intent)}</p>`;
+  html+='<h4 style="margin:16px 0 8px">Expansions:</h4><ul>';
+  data.expansions.forEach(e=>{const colors={lex:'var(--accent)',vec:'#34C759',hyde:'#FF9500'};html+=`<li style="margin-bottom:8px"><strong>[${e.type}]</strong> <span style="color:${colors[e.type]||'inherit'}">${escapeHtml(e.query)}</span></li>`});
+  html+='</ul>';
+  data.results.forEach(r=>{html+=`<h4 style="margin:16px 0 8px">Results for [${r.type}] ${escapeHtml(r.query)}:</h4><pre style="background:var(--code-bg);padding:12px;border-radius:var(--radius-sm);font-size:13px;max-height:300px;overflow:auto">${escapeHtml((r.output||'').substring(0,3000))}</pre>`});
+  document.getElementById('expandResult').innerHTML=html;
+});
+
+// ============ OPTIMIZE ============
+document.getElementById('optStandardBtn').addEventListener('click',async()=>{
+  document.getElementById('optimizeResult').innerHTML=`<div style="text-align:center;padding:24px"><span class="spinner"></span> ${t('loading')}</div>`;
+  const data=await apiPost('/api/optimize',{full:false});
+  if(data.error){document.getElementById('optimizeResult').innerHTML=`<div class="card" style="border-left:3px solid var(--error)"><strong>${t('toast_error')}:</strong> ${escapeHtml(data.error)}</div>`;}
+  else{document.getElementById('optimizeResult').innerHTML=`<div class="card"><pre style="white-space:pre-wrap;font-size:14px">${escapeHtml(data.output||JSON.stringify(data,null,2))}</pre></div>`;showToast(t('toast_done'),'success');}
+  loadStats();
+});
+
+document.getElementById('optFullBtn').addEventListener('click',async()=>{
+  if(!confirm(t('confirm_vacuum')))return;
+  document.getElementById('optimizeResult').innerHTML=`<div style="text-align:center;padding:24px"><span class="spinner"></span> ${t('loading')}</div>`;
+  const data=await apiPost('/api/optimize',{full:true});
+  if(data.error){document.getElementById('optimizeResult').innerHTML=`<div class="card" style="border-left:3px solid var(--error)"><strong>${t('toast_error')}:</strong> ${escapeHtml(data.error)}</div>`;}
+  else{document.getElementById('optimizeResult').innerHTML=`<div class="card"><pre style="white-space:pre-wrap;font-size:14px">${escapeHtml(data.output||JSON.stringify(data,null,2))}</pre></div>`;showToast(t('toast_done'),'success');}
+  loadStats();
+});
+
+// ============ SETTINGS ============
+async function loadSettings() {
+  const data = await apiGet('/api/settings');
+  if (data && !data.error) {
+    document.getElementById('settingsEmbedUrl').value = data.embedding_url || '';
+    document.getElementById('settingsEmbedModel').value = data.embedding_model || '';
+    document.getElementById('settingsEmbedDim').value = data.embedding_dim || '';
+    document.getElementById('settingsRerankUrl').value = data.reranker_url || '';
+    document.getElementById('settingsRerankModel').value = data.reranker_model || '';
+    document.getElementById('settingsLlmUrl').value = data.llm_url || '';
+    document.getElementById('settingsLlmModel').value = data.llm_model || '';
+    document.getElementById('settingsLlmKey').value = data.llm_key || '';
+    document.getElementById('settingsLlmCtx').value = data.llm_ctx || '';
+  } else {
+    showToast(t('settings_load_failed') || 'Failed to load settings', 'error');
+  }
+}
+async function saveSettings() {
+  const settings = {
+    embedding_url: document.getElementById('settingsEmbedUrl').value,
+    embedding_model: document.getElementById('settingsEmbedModel').value,
+    embedding_dim: parseInt(document.getElementById('settingsEmbedDim').value) || 1024,
+    reranker_url: document.getElementById('settingsRerankUrl').value,
+    reranker_model: document.getElementById('settingsRerankModel').value,
+    llm_url: document.getElementById('settingsLlmUrl').value,
+    llm_model: document.getElementById('settingsLlmModel').value,
+    llm_key: document.getElementById('settingsLlmKey').value,
+    llm_ctx: parseInt(document.getElementById('settingsLlmCtx').value) || 32768,
+  };
+  const data = await apiPut('/api/settings', settings);
+  if (data && data.success) {
+    showToast(t('settings_saved'), 'success');
+  } else {
+    showToast(t('settings_save_failed') + ': ' + (data?.error || 'unknown'), 'error');
+  }
+}
+async function testSettings() {
+  const btn = document.getElementById('settingsTestBtn');
+  btn.disabled = true;
+  btn.textContent = t('settings_testing');
+  document.getElementById('settingsTestResult').innerHTML = '';
+  const data = await apiPost('/api/settings/test');
+  btn.disabled = false;
+  btn.textContent = t('settings_test_btn');
+  if (data && data.results) {
+    let html = '<div class="card">';
+    data.results.forEach(r => {
+      const ok = r.ok ? '✅' : '❌';
+      html += `<div style="padding:6px 0;font-size:14px">${ok} <strong>${r.name}</strong>: ${r.message}</div>`;
+    });
+    html += '</div>';
+    document.getElementById('settingsTestResult').innerHTML = html;
+    if (data.all_ok) showToast(t('settings_test_ok'), 'success');
+    else showToast(t('settings_test_fail'), 'error');
+  } else {
+    showToast(t('toast_error'), 'error');
+  }
+}
+
+// Load settings when navigating to settings page
+// (handled in NAVIGATION section)
+
+// ============ VERSION / UPGRADE ============
+async function checkVersion(){const data=await apiGet('/api/version');if(data&&!data.error){document.getElementById('versionBadge').textContent=`v${data.qmd_index?.local||'?'}`;}}
+
+// ============ MD EDITOR ============
+let easyMDEInstance = null;
+let editorMode = 'view'; // 'view' or 'edit'
+let editDocId = null;
+
+function toggleEditDoc() {
+  const contentDiv = document.getElementById('modalContent');
+  const editorArea = document.getElementById('modalEditor');
+  if (editorMode === 'view') {
+    contentDiv.style.display = 'none';
+    editorArea.style.display = 'block';
+    editorArea.value = currentModalContent;
+    document.getElementById('editDocBtn').style.display = 'none';
+    document.getElementById('saveDocBtn').style.display = 'inline-block';
+    document.getElementById('cancelEditBtn').style.display = 'inline-block';
+    document.getElementById('copyDocBtn').style.display = 'none';
+    editorMode = 'edit';
+    if (!easyMDEInstance) {
+      if (typeof EasyMDE === 'undefined') {
+        // fallback to plain textarea
+      } else {
+        try {
+          easyMDEInstance = new EasyMDE({
+            element: editorArea,
+            spellChecker: false,
+            autosave: { enabled: false },
+            renderingConfig: { singleLineBreaks: true },
+            toolbar: ['bold','italic','heading','|','quote','unordered-list','ordered-list','|','link','image','|','preview','side-by-side','fullscreen','guide']
+          });
+        } catch(e) {
+          console.warn('EasyMDE init failed, using plain textarea:', e);
+          easyMDEInstance = null;
+        }
+      }
+    } else {
+      easyMDEInstance.value(currentModalContent);
+    }
+  }
+}
+
+function saveDocContent() {
+  const newContent = easyMDEInstance ? easyMDEInstance.value() : document.getElementById('modalEditor').value;
+  if (!editDocId) return;
+  fetch(`/api/document/${editDocId}/content`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content: newContent })
+  }).then(r => r.json()).then(data => {
+    if (data.success) {
+      showToast(t('toast_saved'), 'success');
+      currentModalContent = newContent;
+      cancelEditDoc();
+      const contentDiv = document.getElementById('modalContent');
+      const pre = document.createElement('pre');
+      pre.style.cssText = 'white-space:pre-wrap;font-size:14px;line-height:1.7';
+      pre.textContent = newContent;
+      contentDiv.innerHTML = '';
+      contentDiv.appendChild(pre);
+      contentDiv.style.display = 'block';
+    } else {
+      showToast(t('toast_save_failed') + ': ' + (data.error || 'unknown'), 'error');
+    }
+  }).catch(e => showToast(t('toast_save_error') + ': ' + e, 'error'));
+}
+
+function cancelEditDoc() {
+  if (easyMDEInstance) { easyMDEInstance.toTextArea(); easyMDEInstance = null; }
+  const contentDiv = document.getElementById('modalContent');
+  const editorArea = document.getElementById('modalEditor');
+  contentDiv.style.display = 'block';
+  editorArea.style.display = 'none';
+  document.getElementById('editDocBtn').style.display = 'inline-block';
+  document.getElementById('saveDocBtn').style.display = 'none';
+  document.getElementById('cancelEditBtn').style.display = 'none';
+  document.getElementById('copyDocBtn').style.display = 'inline-block';
+  editorMode = 'view';
+}
+
+function closeDocModal() {
+  if (splitMode) {
+    splitMode = false;
+    document.querySelector('.modal-box').classList.remove('split');
+    document.getElementById('paneDivider').style.display = 'none';
+    document.getElementById('paneRight').style.display = 'none';
+    document.getElementById('splitViewBtn').innerHTML = '🔄 <span data-i18n="btn_split">Split</span>';
+    rightDocId = null;
+    rightDocData = null;
+  }
+  document.getElementById('docModal').classList.remove('show');
+  currentModalDocId = null;
+  currentModalContent = '';
+  editDocId = null;
+  if (editorMode === 'edit') cancelEditDoc();
+  if (easyMDEInstance) { easyMDEInstance.toTextArea(); easyMDEInstance = null; }
+}
+
+document.getElementById('upgradeBtn').addEventListener('click',async()=>{
+  if(!confirm(t('confirm_upgrade_check')))return;
+  const data=await apiGet('/api/version');let msg='';
+  if(data&&!data.error){msg+=`QMD Index: v${data.qmd_index?.local||'?'}\n`;msg+=`Latest: ${data.tobi_qmd?.latest_remote||'unknown'}\n`;
+    if(confirm(t('confirm_upgrade_git'))){const ud=await apiPost('/api/upgrade',{});if(ud.success){showToast(t('toast_upgrade_completed'),'success');msg+='\n'+(ud.message||'');}else{showToast(t('toast_upgrade_failed')+': '+ud.error,'error');msg+='\n'+(ud.error||'');}}}
+  if(msg) alert(msg);
+});
+
+// ============ INIT ============
+let currentLang = localStorage.getItem('qmd_lang') || 'en';
+let currentTheme = localStorage.getItem('qmd_theme') || 'light';
+async function init(){setTheme(currentTheme);setLanguage(currentLang);buildLangMenu();switchSearchMode('keyword');await loadFolderTree();await loadTagCloud();await checkVersion();}
+init();
+</script>
+</body>
+</html>

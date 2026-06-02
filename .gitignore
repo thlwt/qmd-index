@@ -1,0 +1,40 @@
+# === Personal data ===
+.openclaw/
+temp/
+models/
+qmd_data/
+
+# === Python ===
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# === Node ===
+node_modules/
+.bun/
+
+# === Logs ===
+*.log
+
+# === OS ===
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# === IDE ===
+.vscode/
+.idea/
+
+# === WebUI ===
+webui/uploads/*
+!webui/uploads/.gitkeep
+webui/__pycache__/
+webui/static/index - 1.html
+webui/static/null
+
+# === Environment ===
+.env
+.env.local

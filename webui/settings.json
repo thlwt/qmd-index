@@ -1,0 +1,11 @@
+{
+  "embedding_url": "http://127.0.0.1:1278/v1/embeddings",
+  "embedding_model": "Qwen3-Embedding-0.6B",
+  "embedding_dim": 1024,
+  "reranker_url": "http://127.0.0.1:1245/v1/rerank",
+  "reranker_model": "Qwen3-Reranker-0.6B",
+  "llm_url": "http://localhost:1234/v1",
+  "llm_model": "Qwen3.6-35B",
+  "llm_key": "",
+  "llm_ctx": 32768
+}

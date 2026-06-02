@@ -1,0 +1,52 @@
+# QMD Configuration File
+# D:\QMD-Index\qmd.yml
+
+collections:
+  # OpenClaw workspace - primary knowledge base
+  openclaw:
+    path: C:/Users/sile1618/.openclaw/workspace
+    pattern: "**/*.md"
+    ignore:
+      - "node_modules/**"
+      - ".git/**"
+      - "skills/**/node_modules/**"
+      - "**/.venv/**"
+  
+  # OpenClaw memory (long-term memory)
+  openclaw-memory:
+    path: C:/Users/sile1618/.openclaw/workspace/memory
+    pattern: "**/*.md"
+    ignore:
+      - "backups/**"
+      - ".dreams/**"
+
+  # OpenClaw skills documentation
+  openclaw-skills:
+    path: C:/Users/sile1618/.openclaw/workspace/skills
+    pattern: "**/SKILL.md"
+
+# Global context
+global_context: "OpenClaw AI 助手系统知识库，包含配置文件、技能文档、对话记忆"
+
+# Model configuration
+# Using llama.cpp via localhost (Docker hostname host.docker.internal not available on this host)
+# Port 1245: Qwen.Qwen3-Reranker-0.6B.Q8_0.gguf (重排模型)
+# Port 1278: Qwen3-Embedding-0.6B-f16.gguf (向量模型)
+models:
+  # Embedding: Qwen3-Embedding-0.6B via llama-server API
+  embedding_model_url: "http://127.0.0.1:1278/v1"
+  embedding_model_name: "Qwen3-Embedding-0.6B-f16.gguf"
+  embedding_dim: 1024
+  
+  # Reranker: Qwen.Qwen3-Reranker-0.6B.Q8_0.gguf via llama-server API
+  reranker_model_url: "http://127.0.0.1:1245/v1"
+  reranker_model_name: "Qwen.Qwen3-Reranker-0.6B.Q8_0.gguf"
+  
+  # Query Expansion: QMD Query Expansion (local GGUF)
+  query_expansion_model: "D:/QMD-Index/models/qmd-query-expansion-1.7B-q4_k_m.gguf"
+
+# Search defaults
+defaults:
+  limit: 10
+  min_score: 0.3
+  rerank: true
