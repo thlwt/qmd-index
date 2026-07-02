@@ -19,8 +19,15 @@ import requests
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Ensure webui directory is in sys.path for hyper_extract import
+_webui_dir = Path(__file__).resolve().parent
+if str(_webui_dir) not in sys.path:
+    sys.path.insert(0, str(_webui_dir))
+
 from flask import Flask, request, jsonify, send_from_directory, render_template_string
 from flask_cors import CORS
+
+from hyper_extract.api import hyper_api
 
 # ============================================================
 # Configuration
@@ -34,6 +41,8 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 
 app = Flask(__name__, static_folder="static", static_url_path="/")
 CORS(app)
+
+app.register_blueprint(hyper_api)
 
 PORT = int(os.environ.get("QMD_PORT", 8090))
 
@@ -233,6 +242,51 @@ def api_search():
     structured = _enrich_search_with_ids(result.get("output", ""), collection)
     if structured:
         result["structured"] = structured
+    # Entity-aware enrichment: find docs linked to entities matching query
+    try:
+        db_path = _find_db_path()
+        if db_path and os.path.exists(db_path):
+            conn = sqlite3.connect(db_path)
+            words = [w.strip().lower() for w in query.split() if len(w.strip()) > 1]
+            if words:
+                like_clauses = " OR ".join(f"e.name LIKE '%{w}%'" for w in words)
+                matched_entities = conn.execute(
+                    f"SELECT e.id, e.name, e.type FROM hyper_entities e WHERE {like_clauses} LIMIT 10"
+                ).fetchall()
+                if matched_entities:
+                    result["matched_entities"] = [{"id": r[0], "name": r[1], "type": r[2]} for r in matched_entities]
+                    entity_ids = [r[0] for r in matched_entities]
+                    ph = ",".join("?" for _ in entity_ids)
+                    linked = conn.execute(
+                        f"SELECT de.doc_id, e.name, e.id FROM hyper_doc_entities de JOIN hyper_entities e ON e.id=de.entity_id WHERE de.entity_id IN ({ph})",
+                        entity_ids
+                    ).fetchall()
+                    entity_doc_map = {}
+                    for doc_id, ename, eid in linked:
+                        entity_doc_map.setdefault(doc_id, []).append({"id": eid, "name": ename})
+                    if entity_doc_map and structured is not None:
+                        existing_ids = {r.get("id") for r in structured}
+                        for r in structured:
+                            if r.get("id") in entity_doc_map:
+                                r["entity_matched"] = entity_doc_map[r["id"]]
+                        for doc_id, ents in entity_doc_map.items():
+                            if doc_id not in existing_ids:
+                                doc_row = conn.execute(
+                                    "SELECT id, title, path, collection FROM documents WHERE id=? AND active=1",
+                                    (doc_id,)
+                                ).fetchone()
+                                if doc_row:
+                                    structured.append({
+                                        "id": doc_row[0],
+                                        "title": doc_row[1] or f"Doc#{doc_row[0]}",
+                                        "path": doc_row[2] or "",
+                                        "collection": doc_row[3] or "",
+                                        "score": 0.5,
+                                        "entity_matched": ents,
+                                    })
+            conn.close()
+    except Exception:
+        pass
     return jsonify(result)
 
 
@@ -298,6 +352,22 @@ def _enrich_search_with_ids(output_text, collection):
                         row = rows[0]
                 if row:
                     r["id"] = row[0]
+        # Enrich with hyper-entities
+        for r in results:
+            if r.get("id"):
+                try:
+                    ents = cur.execute("""
+                        SELECT e.id, e.name, e.type
+                        FROM hyper_entities e
+                        JOIN hyper_doc_entities de ON de.entity_id = e.id
+                        WHERE de.doc_id = ?
+                        ORDER BY de.mentions DESC
+                        LIMIT 8
+                    """, (r["id"],)).fetchall()
+                    if ents:
+                        r["entities"] = [{"id": e[0], "name": e[1], "type": e[2]} for e in ents]
+                except Exception:
+                    pass
         conn.close()
         return results
     except Exception:
@@ -807,7 +877,96 @@ def api_search_explain():
     return jsonify(explain_data)
 
 
-# --- Index Stats (status from tobi/qmd) ---
+@app.route("/api/agent/search", methods=["POST"])
+def api_agent_search():
+    """Unified agent-friendly search: QMD BM25 + hyper-extract entities + web fallback.
+    Returns clean structured JSON optimized for AI agent consumption.
+    Request JSON: {"query": "...", "collection": "...", "limit": 10, "include_web": false}
+    """
+    data = request.get_json(silent=True) or {}
+    query = (data.get("query") or request.args.get("q", "")).strip()
+    if not query:
+        return jsonify({"error": "Missing 'query'"}), 400
+    collection = data.get("collection") or request.args.get("collection") or None
+    limit = int(data.get("limit", request.args.get("limit", 10)))
+    include_web = data.get("include_web", False)
+
+    result = {"query": query, "sources": {}}
+
+    # 1. QMD BM25 search (via existing endpoint logic)
+    try:
+        args_list = ["search", query, "-n", str(limit)]
+        if collection:
+            args_list += ["-c", collection]
+        raw = _run_qmd_raw(*args_list)
+        qmd_docs = _enrich_search_with_ids(raw.get("output", ""), collection)
+        if qmd_docs:
+            result["sources"]["qmd"] = qmd_docs
+    except Exception:
+        pass
+
+    # 2. Hyper-extract entities matched by query
+    try:
+        db_path = _find_db_path()
+        if db_path and os.path.exists(db_path):
+            conn = sqlite3.connect(db_path)
+            words = [w.strip().lower() for w in query.split() if len(w.strip()) > 1]
+            if words:
+                like_clauses = " OR ".join(f"e.name LIKE '%{w}%'" for w in words)
+                entities = conn.execute(
+                    f"SELECT e.id, e.name, e.type, e.description FROM hyper_entities e WHERE {like_clauses} LIMIT 10"
+                ).fetchall()
+                if entities:
+                    result["sources"]["entities"] = [
+                        {"id": r[0], "name": r[1], "type": r[2], "description": r[3]}
+                        for r in entities
+                    ]
+                    # For each entity, fetch top relationships
+                    for ent in result["sources"]["entities"]:
+                        rels = conn.execute(
+                            """SELECT r.rel_type, s.name AS src, t.name AS tgt
+                               FROM hyper_relationships r
+                               JOIN hyper_entities s ON s.id = r.source_id
+                               JOIN hyper_entities t ON t.id = r.target_id
+                               WHERE r.source_id=? OR r.target_id=?
+                               LIMIT 5""",
+                            (ent["id"], ent["id"])
+                        ).fetchall()
+                        if rels:
+                            ent["relationships"] = [
+                                {"type": r[0], "source": r[1], "target": r[2]} for r in rels
+                            ]
+            conn.close()
+    except Exception:
+        pass
+
+    # 3. Web fallback via search_priority
+    if include_web:
+        try:
+            tavily_key = os.environ.get("TAVILY_API_KEY", "").strip()
+            if tavily_key:
+                resp = requests.post(
+                    "https://api.tavily.com/search",
+                    json={"api_key": tavily_key, "query": query,
+                           "search_depth": "basic", "max_results": limit,
+                           "include_answer": True},
+                    timeout=15)
+                web_data = resp.json()
+                web_results = [{"title": item.get("title", ""),
+                                "url": item.get("url", ""),
+                                "content": item.get("content", "")[:500],
+                                "source": "tavily"}
+                               for item in web_data.get("results", [])]
+                if web_data.get("answer"):
+                    web_results.insert(0, {"title": "AI Answer", "url": "",
+                                            "content": web_data["answer"][:1000],
+                                            "source": "tavily"})
+                if web_results:
+                    result["sources"]["web"] = web_results
+        except Exception:
+            pass
+
+    return jsonify(result)
 
 @app.route("/api/status", methods=["GET"])
 def api_status():
@@ -1340,6 +1499,77 @@ def api_graph():
     wiki_edge_count = sum(1 for e in edge_list if e["type"] == "wiki")
     tag_edge_count = sum(1 for e in edge_list if e["type"] == "tag")
 
+    # ── Hyper-Extract entities & relationships (mode: hyper / all) ──
+    hyper_entity_count = 0
+    hyper_rel_count = 0
+    if mode in ("hyper", "all"):
+        try:
+            from hyper_extract import HyperDB
+            hyper_db = HyperDB(db_path)
+            hyper_entities = hyper_db.conn.execute(
+                "SELECT id, name, type, description FROM hyper_entities ORDER BY id"
+            ).fetchall()
+            hyper_rels = hyper_db.conn.execute(
+                "SELECT source_id, target_id, rel_type, weight FROM hyper_relationships"
+            ).fetchall()
+            hyper_doc_links = hyper_db.conn.execute(
+                "SELECT doc_id, entity_id FROM hyper_doc_entities"
+            ).fetchall()
+            hyper_db.conn.close()
+
+            entity_id_base = 20_000_000
+            added_entity_ids = set()
+            for he in hyper_entities:
+                eid, name, etype, desc = he
+                node_id = entity_id_base + eid
+                node_list.append({
+                    "id": node_id,
+                    "title": name,
+                    "collection": f"hyper:{etype}",
+                    "path": "",
+                    "virtual": False,
+                    "hyper_entity": True,
+                    "entity_type": etype,
+                    "entity_id": eid,
+                })
+                added_entity_ids.add(node_id)
+                hyper_entity_count += 1
+
+            for hr in hyper_rels:
+                source_id, target_id, rel_type, weight = hr
+                from_node = entity_id_base + source_id
+                to_node = entity_id_base + target_id
+                if from_node in added_entity_ids and to_node in added_entity_ids:
+                    pair = (from_node, to_node)
+                    if pair not in existing_pairs:
+                        edge_list.append({
+                            "from": from_node,
+                            "to": to_node,
+                            "type": "hyper",
+                            "label": rel_type,
+                            "weight": weight or 1.0,
+                        })
+                        existing_pairs.add(pair)
+                        existing_pairs.add((to_node, from_node))
+                        hyper_rel_count += 1
+
+            for hdl in hyper_doc_links:
+                doc_id, entity_id = hdl
+                from_node = entity_id_base + entity_id
+                to_node = doc_id
+                if from_node in added_entity_ids:
+                    pair = (from_node, to_node)
+                    if pair not in existing_pairs:
+                        edge_list.append({
+                            "from": from_node,
+                            "to": to_node,
+                            "type": "hyper_doc",
+                        })
+                        existing_pairs.add(pair)
+                        existing_pairs.add((to_node, from_node))
+        except Exception:
+            pass
+
     return jsonify({
         "nodes": node_list,
         "edges": edge_list,
@@ -1348,6 +1578,8 @@ def api_graph():
         "wiki_edge_count": wiki_edge_count,
         "tag_edge_count": tag_edge_count,
         "collection_edge_count": collection_edge_count,
+        "hyper_entity_count": hyper_entity_count,
+        "hyper_rel_count": hyper_rel_count,
         "mode": mode,
         "detail": "high",
         "aggregated": False,
@@ -1714,7 +1946,7 @@ def api_embed():
 
 @app.route("/api/expand", methods=["POST"])
 def api_expand():
-    """Expand a query using LLM-based expansion. Maps to: qmd expand / store.expandQuery."""
+    """Expand a query using LLM-based expansion with the dedicated query-expansion model."""
     data = request.get_json() or {}
     query = data.get("query", "")
     if not query:
@@ -1723,20 +1955,23 @@ def api_expand():
     intent = data.get("intent", "")
     max_expansions = int(data.get("max", 3))
 
-    # Expand by running related queries and collecting results
     expansions = []
 
-    # Lex expansion: exact terms with quotes for phrase matching
+    # Always include lex expansion
     expansions.append({"type": "lex", "query": f'"{query}"'})
 
-    # Vector expansion: natural language question form
-    if intent:
-        expansions.append({"type": "vec", "query": intent})
-    else:
-        expansions.append({"type": "vec", "query": query})
+    # Try LLM-powered expansion via the query-expansion Docker service
+    llm_expansions = _call_query_expansion_llm(query, intent, max_expansions - 1)
 
-    # Hyde expansion (hypothetical document): use the query as-is since we don't have LLM locally
-    expansions.append({"type": "hyde", "query": f"Document about {query}"})
+    if llm_expansions:
+        expansions.extend(llm_expansions)
+    else:
+        # Fallback: string-based expansion when LLM is unavailable
+        if intent:
+            expansions.append({"type": "vec", "query": intent})
+        else:
+            expansions.append({"type": "vec", "query": query})
+        expansions.append({"type": "hyde", "query": f"Document about {query}"})
 
     # Run all expanded queries and collect results
     all_results = []
@@ -1754,6 +1989,54 @@ def api_expand():
         "expansions": expansions[:max_expansions],
         "results": all_results,
     })
+
+
+def _call_query_expansion_llm(query: str, intent: str, max_count: int) -> list:
+    """Call the query-expansion Docker service to generate alternative queries.
+
+    The model is a completion-only GGUF (QMD Query Expansion 1.7B), so we use
+    the /v1/completions endpoint. Uses a structured prompt that elicits
+    lex/vec/hyde style expansions. Returns list of {'type','query'} dicts,
+    or empty list on failure.
+    """
+    if max_count < 1:
+        return []
+    base = SETTINGS.get("query_expansion_url", "").rstrip("/")
+    url = base + "/completions"
+    model = SETTINGS.get("query_expansion_model", "qmd-query-expansion-1.7B-q4_k_m.gguf")
+    if not url.startswith("http"):
+        return []
+
+    prompt = f"Query: {query}\nAlternative:"
+
+    try:
+        r = requests.post(url, json={
+            "model": model,
+            "prompt": prompt,
+            "max_tokens": 64,
+            "temperature": 0.7,
+        }, timeout=30)
+        if r.status_code == 200:
+            body = r.json()
+            text = (body.get("choices") or [{}])[0].get("text", "").strip()
+            if text:
+                import re as _re
+                expansions = []
+                for line in text.split("\n"):
+                    line = line.strip().lstrip("0123456789.)-").strip()
+                    if not line:
+                        continue
+                    # Extract alternative query after "Alternative:" or similar markers
+                    alt = _re.sub(r'^(Query|Alternative)\s*:\s*', '', line, flags=_re.I).strip()
+                    if alt and alt != query and alt != " ":
+                        expansions.append({"type": "vec", "query": alt})
+                        if len(expansions) >= max_count:
+                            break
+                if expansions:
+                    return expansions
+    except Exception:
+        pass
+    return []
 
 
 # ============================================================
@@ -1958,15 +2241,17 @@ def api_upload():
 SETTINGS_PATH = Path(__file__).resolve().parent / "settings.json"
 
 DEFAULT_SETTINGS = {
-    "embedding_url": "http://127.0.0.1:1278/v1/embeddings",
-    "embedding_model": "Qwen3-Embedding-0.6B",
-    "embedding_dim": 1024,
-    "reranker_url": "http://127.0.0.1:1245/v1/rerank",
-    "reranker_model": "Qwen3-Reranker-0.6B",
+    "embedding_url": "http://127.0.0.1:2780/v1/embeddings",
+    "embedding_model": "embeddinggemma-300M-Q8_0.gguf",
+    "embedding_dim": 768,
+    "reranker_url": "http://127.0.0.1:2781/v1/rerank",
+    "reranker_model": "qwen3-reranker-0.6b-q8_0.gguf",
     "llm_url": "http://localhost:1234/v1",
-    "llm_model": "Qwen3.6-35B",
+    "llm_model": "Qwen3.5-9B",
     "llm_key": "",
     "llm_ctx": 32768,
+    "query_expansion_url": "http://query-expansion:2782/v1",
+    "query_expansion_model": "qmd-query-expansion-1.7B-q4_k_m.gguf",
 }
 
 def load_settings():
@@ -2033,6 +2318,11 @@ def api_test_settings():
     # Test LLM
     llm_payload = _json.dumps({"model": SETTINGS.get("llm_model", ""), "messages": [{"role": "user", "content": "hi"}], "max_tokens": 5}).encode()
     test_endpoint("LLM", SETTINGS.get("llm_url", "") + "/chat/completions", payload=llm_payload, timeout=15)
+
+    # Test query-expansion
+    qe_url = SETTINGS.get("query_expansion_url", "").rstrip("/") + "/chat/completions"
+    qe_payload = _json.dumps({"model": SETTINGS.get("query_expansion_model", ""), "messages": [{"role": "user", "content": "test"}], "max_tokens": 5}).encode()
+    test_endpoint("Query-Expansion", qe_url, payload=qe_payload, timeout=15)
 
     return jsonify({"results": results, "all_ok": all_ok})
 

@@ -7,8 +7,8 @@ Local semantic search using @tobilu/qmd's existing SQLite index + llama.cpp Dock
 Features:
   - Search across all indexed collections (1888+ docs, 15 collections)
   - BM25 keyword search via FTS5 (zero latency)
-  - Semantic search via Docker embedding API (port 1278)
-  - Rerank via Docker reranker API (port 1245)
+  - Semantic search via Docker embedding API (port 2980)
+  - Rerank via Docker reranker API (port 2981)
   - Cross-platform path resolution (Windows/macOS/Linux)
 
 Usage:
@@ -21,8 +21,8 @@ Usage:
 
 Config: ./qmd.yml
 Index:  auto-detected models/qmd/index.sqlite
-Embed:  http://host.docker.internal:1278/v1/embeddings
-Rerank: http://host.docker.internal:1245/v1/rerank
+Embed:  http://host.docker.internal:2980/v1/embeddings
+Rerank: http://host.docker.internal:2981/v1/rerank
 """
 
 import sys
@@ -41,7 +41,12 @@ def _resolve_index_path() -> str:
     """Cross-platform path resolution for the SQLite index file.
 
     Works in both native Windows Python and git-bash (WSL/MSYS) environments.
+    Supports QMD_INDEX_PATH env var (used in Docker).
     """
+    env_path = os.environ.get("QMD_INDEX_PATH")
+    if env_path and os.path.exists(env_path):
+        return env_path
+
     script_dir = os.path.dirname(os.path.abspath(__file__))
 
     # Build candidate paths relative to script directory first (most reliable)
@@ -91,9 +96,10 @@ def _resolve_index_path() -> str:
 
 INDEX_PATH = _resolve_index_path()
 EMBEDDING_MODEL = "Qwen3-Embedding-0.6B-f16.gguf"
-EMBEDDING_DIM = 1024   # Qwen3-Embedding-0.6B outputs 1024-dim vectors
-EMBEDDING_URL = "http://127.0.0.1:1278/v1/embeddings"
-RERANKER_URL = "http://127.0.0.1:1245/v1/rerank"
+EMBEDDING_DIM = 768    # embeddinggemma-300M outputs 768-dim vectors
+EMBEDDING_URL = os.environ.get("QMD_EMBEDDING_URL", "http://127.0.0.1:2980/v1/embeddings")
+RERANKER_URL = os.environ.get("QMD_RERANKER_URL", "http://127.0.0.1:2981/v1/rerank")
+QUERY_EXPANSION_URL = os.environ.get("QMD_QUERY_EXPANSION_URL", "http://127.0.0.1:2782/v1/completions")
 
 DEFAULT_LIMIT = 10
 
@@ -234,7 +240,7 @@ def get_embedding(text: str):
             if d.get("data"):
                 return d["data"][0]["embedding"]
     except Exception as e:
-        print(f"Warning: Embedding API (1278): {e}", file=sys.stderr)
+            print(f"Warning: Embedding API (2980): {e}", file=sys.stderr)
     return None
 
 
@@ -264,7 +270,7 @@ def get_rerank(query, documents):
                     })
                 return sorted(ranked, key=lambda x: -x["relevance_score"])
     except Exception as e:
-        print(f"Warning: Reranker API (1245): {e}", file=sys.stderr)
+            print(f"Warning: Reranker API (2981): {e}", file=sys.stderr)
     return None
 
 
@@ -276,6 +282,37 @@ def check_api_ready() -> bool:
         return r.status_code == 200
     except Exception:
         return False
+
+
+def get_query_expansions(query: str, max_count: int = 2) -> list:
+    """Expand a query using the qmd-query-expansion model (completion endpoint).
+
+    Returns a list of expanded query strings, or empty list on failure.
+    """
+    try:
+        import requests as req
+        r = req.post(QUERY_EXPANSION_URL, json={
+            "model": "qmd-query-expansion-1.7B-q4_k_m.gguf",
+            "prompt": f"Query: {query}\nAlternative:",
+            "max_tokens": 64,
+            "temperature": 0.7,
+        }, timeout=30)
+        if r.status_code == 200:
+            text = r.json().get("choices", [{}])[0].get("text", "").strip()
+            if text:
+                import re
+                expansions = []
+                for line in text.split("\n"):
+                    line = line.strip().lstrip("0123456789.)-").strip()
+                    alt = re.sub(r'^(Query|Alternative)\s*:\s*', '', line, flags=re.I).strip()
+                    if alt and alt != query and alt != " " and len(alt) > 3:
+                        expansions.append(alt)
+                        if len(expansions) >= max_count:
+                            break
+                return expansions
+    except Exception as e:
+        print(f"Warning: Query expansion API: {e}", file=sys.stderr)
+    return []
 
 
 # ==================== Semantic Search ====================
@@ -347,13 +384,17 @@ def cmd_list(db):
         print()
 
 
-def cmd_search(db, query, limit=10, collection=None, use_semantic=False):
+def cmd_search(db, query, limit=10, collection=None, use_semantic=False, use_expand=False):
     if not query.strip():
         print("Error: Empty query.", file=sys.stderr)
         return
 
     api_ready = check_api_ready()
-    mode = "Semantic" if (use_semantic and api_ready) else "BM25 keyword"
+    mode_parts = []
+    if use_expand:
+        mode_parts.append("Expanded")
+    mode_parts.append("Semantic" if (use_semantic and api_ready) else "BM25 keyword")
+    mode = "+".join(mode_parts)
 
     print(f"\n{'='*70}")
     print(f"  Searching: \"{query}\"")
@@ -362,16 +403,29 @@ def cmd_search(db, query, limit=10, collection=None, use_semantic=False):
     print(f"  Mode: {mode}")
     print(f"{'='*70}\n", file=sys.stderr)
 
-    if use_semantic and api_ready:
-        results = semantic_search(db, query, limit=limit, collection=collection)
-    else:
-        results = db.bm25_search(query, collection=collection, limit=limit * 2)
-        # De-dup
-        seen = {}
-        for r in results:
-            if r["id"] not in seen or r["score"] > seen[r["id"]]["score"]:
-                seen[r["id"]] = r
-        results = sorted(seen.values(), key=lambda x: -x["score"])[:limit]
+    # Generate expanded queries if requested
+    queries_to_run = [query]
+    if use_expand:
+        expanded = get_query_expansions(query)
+        if expanded:
+            print(f"  Query expansions: {expanded}", file=sys.stderr)
+            queries_to_run.extend(expanded)
+
+    # Run search for each query variant
+    merged = {}
+    for q in queries_to_run:
+        if use_semantic and api_ready:
+            batch = semantic_search(db, q, limit=limit, collection=collection)
+        else:
+            batch = db.bm25_search(q, collection=collection, limit=limit * 2)
+
+        for doc in batch:
+            did = doc["id"]
+            score = doc.get("similarity", doc.get("score", 0))
+            if did not in merged or score > merged[did].get("similarity", merged[did].get("score", 0)):
+                merged[did] = doc
+
+    results = sorted(merged.values(), key=lambda x: -x.get("similarity", x.get("score", 0)))[:limit]
 
     if not results:
         print("No matching documents found.")
@@ -440,8 +494,8 @@ def cmd_stats(db):
     print(f"Content entries: {total_content}")
     print(f"Vector chunks: {total_vectors}")
     print(f"\nAPIs:")
-    print(f"  Embedding (port 1278): {'OK' if api_ready else 'DOWN'}")
-    print(f"  Reranker (port 1245):  {'OK' if api_ready else 'check manually'}")
+    print(f"  Embedding (port 2980): {'OK' if api_ready else 'DOWN'}")
+    print(f"  Reranker (port 2981):  {'OK' if api_ready else 'check manually'}")
 
     cols = db.get_collections()
     if cols:
@@ -1196,6 +1250,119 @@ def _split_xlmeta_content(content: str, root_dir: str) -> List[Dict]:
     return docs
 
 
+# ==================== Hyper-Extract CLI ====================
+
+def cmd_hyper_status(db):
+    """Show Hyper-Extract knowledge graph status."""
+    _add_webui_to_path()
+    from hyper_extract.db import HyperDB
+    hdb = HyperDB(db.db_path)
+    s = hdb.stats()
+    print(f"\n{'='*70}")
+    print(f"  Hyper-Extract Knowledge Graph")
+    print(f"{'='*70}\n")
+    print(f"  Entities:      {s['entities']}")
+    print(f"  Relationships: {s['relationships']}")
+    print(f"  Doc links:     {s['doc_links']}")
+    hdb.close()
+
+
+def cmd_hyper_list(db):
+    """List entities in the knowledge graph."""
+    _add_webui_to_path()
+    from hyper_extract.db import HyperDB
+    hdb = HyperDB(db.db_path)
+    entities = hdb.list_entities(limit=100)
+    if not entities:
+        print("No entities in knowledge graph.")
+        hdb.close()
+        return
+    print(f"\n{'='*70}")
+    print(f"  Hyper-Extract Entities ({len(entities)})")
+    print(f"{'='*70}\n")
+    for i, e in enumerate(entities, 1):
+        print(f"[{i}] {e['name']} ({e['type']})")
+        if e['description']:
+            print(f"    {e['description'][:100]}")
+        print()
+    hdb.close()
+
+
+def cmd_hyper_extract(db, doc_id):
+    """Extract knowledge from a document."""
+    _add_webui_to_path()
+    from hyper_extract.db import HyperDB
+    from hyper_extract.extractor import HyperExtractor
+    from hyper_extract.graph import HyperGraph
+
+    # Get document content
+    doc = db.get_document_by_id(doc_id)
+    if not doc:
+        print(f"Document #{doc_id} not found.")
+        return
+    content = doc.get("content", "")
+    if not content:
+        print(f"Document #{doc_id} has no content.")
+        return
+
+    print(f"\nExtracting knowledge from document #{doc_id}: {doc.get('title', '')}")
+
+    hdb = HyperDB(db.db_path)
+    extractor = HyperExtractor(
+        llm_url=os.environ.get("QMD_LLM_URL", "http://127.0.0.1:5000/v1"),
+        llm_model=os.environ.get("QMD_LLM_MODEL", ""),
+    )
+    hg = HyperGraph(hdb, extractor)
+    result = hg.extract_and_store(doc_id, content, doc.get("collection", ""))
+    hdb.close()
+
+    print(f"  Entities found:      {result['entities_found']}")
+    print(f"  Relationships found: {result['relationships_found']}")
+    print(f"  Entities created:    {result['entities_created']}")
+    if result.get("entities"):
+        print(f"  Entities: {', '.join(e['name'] for e in result['entities'])}")
+    if result.get("error"):
+        print(f"  Warning: {result['error']}")
+
+
+def cmd_hyper_entity(db, entity_id):
+    """Show entity details."""
+    _add_webui_to_path()
+    from hyper_extract.db import HyperDB
+    hdb = HyperDB(db.db_path)
+    entity = hdb.get_entity(entity_id)
+    if not entity:
+        print(f"Entity #{entity_id} not found.")
+        hdb.close()
+        return
+    rels = hdb.get_relationships(entity_id=entity_id)
+    docs = hdb.get_entity_docs(entity_id)
+    hdb.close()
+
+    print(f"\n{'='*70}")
+    print(f"  Entity #{entity['id']}: {entity['name']}")
+    print(f"{'='*70}\n")
+    print(f"  Type:        {entity['type']}")
+    print(f"  Description: {entity['description']}")
+    if rels:
+        print(f"\n  Relationships ({len(rels)}):")
+        for r in rels:
+            direction = "→" if r['source_id'] == entity_id else "←"
+            other = r['target_name'] if r['source_id'] == entity_id else r['source_name']
+            print(f"    {entity['name']} {direction} {other} ({r['rel_type']})")
+    if docs:
+        print(f"\n  Found in documents ({len(docs)}):")
+        for d in docs:
+            print(f"    #{d['doc_id']} {d.get('title', '')} ({d.get('collection', '')})")
+
+
+def _add_webui_to_path():
+    """Ensure webui directory is in sys.path for hyper_extract imports."""
+    webui_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "webui")
+    if os.path.isdir(webui_dir) and webui_dir not in sys.path:
+        sys.path.insert(0, webui_dir)
+
+
 # ==================== Main ====================
 
 def main():
@@ -1223,6 +1390,7 @@ def main():
     p_search.add_argument("--limit", "-n", type=int, default=DEFAULT_LIMIT)
     p_search.add_argument("--collection", "-c", type=str, default=None)
     p_search.add_argument("--semantic", action="store_true", help="Use embedding+rerank")
+    p_search.add_argument("--expand", action="store_true", help="Expand query via LLM before search")
 
     sub.add_parser("list", help="List collections")
     p_show = sub.add_parser("show", help="Show document")
@@ -1255,6 +1423,16 @@ def main():
     p_import.add_argument("-p", "--prefix", type=str, default=None,
                          help="Collection name prefix (e.g., 'minio-backup')")
 
+    # Hyper-Extract commands
+    p_hyper = sub.add_parser("hyper", help="Hyper-Extract knowledge graph operations")
+    hyper_sub = p_hyper.add_subparsers(dest="hyper_cmd")
+    hyper_sub.add_parser("status", help="Show knowledge graph status")
+    hyper_sub.add_parser("list", help="List entities")
+    p_hyper_extract = hyper_sub.add_parser("extract", help="Extract knowledge from document")
+    p_hyper_extract.add_argument("doc_id", type=int, help="Document ID")
+    p_hyper_entity = hyper_sub.add_parser("entity", help="Show entity details")
+    p_hyper_entity.add_argument("entity_id", type=int, help="Entity ID")
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -1266,7 +1444,8 @@ def main():
             cmd_list(db)
         elif args.command == "search":
             cmd_search(db, args.query, limit=args.limit,
-                       collection=args.collection, use_semantic=args.semantic)
+                       collection=args.collection, use_semantic=args.semantic,
+                       use_expand=getattr(args, "expand", False))
         elif args.command == "show":
             cmd_show(db, args.doc_id)
         elif args.command == "stats":
@@ -1281,6 +1460,17 @@ def main():
             cmd_optimize(db, full=args.full)
         elif args.command == "import":
             cmd_import(db, args.base_dir, collection_prefix=args.prefix)
+        elif args.command == "hyper":
+            if args.hyper_cmd == "status":
+                cmd_hyper_status(db)
+            elif args.hyper_cmd == "list":
+                cmd_hyper_list(db)
+            elif args.hyper_cmd == "extract":
+                cmd_hyper_extract(db, args.doc_id)
+            elif args.hyper_cmd == "entity":
+                cmd_hyper_entity(db, args.entity_id)
+            else:
+                print("Usage: qmd hyper {status|list|extract|entity}")
     finally:
         db.close()
 

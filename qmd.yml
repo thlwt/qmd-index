@@ -29,21 +29,21 @@ collections:
 global_context: "OpenClaw AI 助手系统知识库，包含配置文件、技能文档、对话记忆"
 
 # Model configuration
-# Using llama.cpp via localhost (Docker hostname host.docker.internal not available on this host)
-# Port 1245: Qwen.Qwen3-Reranker-0.6B.Q8_0.gguf (重排模型)
-# Port 1278: Qwen3-Embedding-0.6B-f16.gguf (向量模型)
+# Docker CPU setup — ports 2780 (embedding) / 2781 (reranker)
+# Port 2780: embeddinggemma-300M-Q8_0.gguf (向量模型)
+# Port 2781: qwen3-reranker-0.6b-q8_0.gguf (重排模型)
 models:
-  # Embedding: Qwen3-Embedding-0.6B via llama-server API
-  embedding_model_url: "http://127.0.0.1:1278/v1"
-  embedding_model_name: "Qwen3-Embedding-0.6B-f16.gguf"
-  embedding_dim: 1024
+  # Embedding: EmbeddingGemma-300M via local llama-server (CPU)
+  embedding_model_url: "http://127.0.0.1:2780/v1"
+  embedding_model_name: "embeddinggemma-300M-Q8_0.gguf"
+  embedding_dim: 768
   
-  # Reranker: Qwen.Qwen3-Reranker-0.6B.Q8_0.gguf via llama-server API
-  reranker_model_url: "http://127.0.0.1:1245/v1"
-  reranker_model_name: "Qwen.Qwen3-Reranker-0.6B.Q8_0.gguf"
+  # Reranker: Qwen3-Reranker-0.6B via local llama-server (CPU)
+  reranker_model_url: "http://127.0.0.1:2781/v1"
+  reranker_model_name: "qwen3-reranker-0.6b-q8_0.gguf"
   
   # Query Expansion: QMD Query Expansion (local GGUF)
-  query_expansion_model: "D:/QMD-Index/models/qmd-query-expansion-1.7B-q4_k_m.gguf"
+  query_expansion_model: "E:/QMD-Index/models/qmd-query-expansion-1.7B-q4_k_m.gguf"
 
 # Search defaults
 defaults:

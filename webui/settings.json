@@ -1,11 +1,13 @@
 {
-  "embedding_url": "http://127.0.0.1:1278/v1/embeddings",
-  "embedding_model": "Qwen3-Embedding-0.6B",
-  "embedding_dim": 1024,
-  "reranker_url": "http://127.0.0.1:1245/v1/rerank",
-  "reranker_model": "Qwen3-Reranker-0.6B",
-  "llm_url": "http://localhost:1234/v1",
-  "llm_model": "Qwen3.6-35B",
+  "embedding_url": "http://127.0.0.1:2980/v1/embeddings",
+  "embedding_model": "gemma-300M",
+  "embedding_dim": 768,
+  "reranker_url": "http://127.0.0.1:2981/v1/rerank",
+  "reranker_model": "qwen3-reranker-0.6b",
+  "llm_url": "http://127.0.0.1:5000/v1",
+  "llm_model": "qwen/qwen3.5-9b",
   "llm_key": "",
-  "llm_ctx": 32768
+  "llm_ctx": 32768,
+  "query_expansion_url": "http://127.0.0.1:2982/v1",
+  "query_expansion_model": "qmd-query-expansion-1.7B"
 }

@@ -81,6 +81,15 @@ body{font-family:'Inter','Noto Sans SC','Noto Sans JP',-apple-system,BlinkMacSys
 .result-path{font-size:13px;color:var(--text-tertiary);margin-bottom:8px}
 .result-collection{display:inline-block;font-size:12px;padding:2px 8px;background:var(--accent-light);color:var(--accent);border-radius:6px;margin-right:8px}
 .result-preview{font-size:14px;color:var(--text-secondary);line-height:1.5;max-height:80px;overflow:hidden}
+.result-entities{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0}
+.entity-tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:4px;background:var(--accent-light);color:var(--accent);cursor:default;transition:var(--transition)}
+.entity-tag:hover{opacity:.8}
+.entity-person{background:rgba(91,140,90,.15);color:var(--success)}
+.entity-organization{background:rgba(196,144,90,.15);color:var(--warning)}
+.entity-location{background:rgba(90,144,196,.15);color:#5a90c4}
+.entity-technology{background:rgba(123,107,90,.15);color:var(--accent)}
+.entity-concept{background:var(--accent-light);color:var(--accent)}
+.entity-term{background:rgba(168,152,136,.12);color:var(--text-secondary)}
 .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:32px}
 .stat-card{background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius-md);padding:20px;text-align:center}
 .stat-value{font-size:36px;font-weight:700;color:var(--accent);letter-spacing:-1px}
@@ -104,6 +113,8 @@ body{font-family:'Inter','Noto Sans SC','Noto Sans JP',-apple-system,BlinkMacSys
 @keyframes slideIn{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:translateX(0)}}
 .spinner{display:inline-block;width:20px;height:20px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
+@keyframes barStripe{from{background-position:200% 0}to{background-position:0 0}}
+.bar-indeterminate{background:linear-gradient(90deg,var(--accent) 30%,var(--accent-hover) 50%,var(--accent) 70%);background-size:200% 100%;animation:barStripe 1.5s linear infinite;width:100%!important}
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:200;align-items:center;justify-content:center;padding:32px 16px}
 .modal-overlay.show{display:flex}
 .modal-box{background:var(--bg-secondary);border-radius:var(--radius-lg);padding:32px;max-width:800px;width:100%;max-height:85vh;display:flex;flex-direction:column;box-shadow:var(--shadow-lg)}
@@ -246,6 +257,7 @@ body{font-family:'Inter','Noto Sans SC','Noto Sans JP',-apple-system,BlinkMacSys
       <div class="sidebar-label" data-i18n="nav_search">Search</div>
       <div class="nav-item active" data-page="search"><span class="nav-icon">🔍</span><span data-i18n="nav_keyword">Search</span></div>
       <div class="nav-item" data-page="graph"><span class="nav-icon">🕸️</span><span data-i18n="nav_graph">Graph</span></div>
+      <div class="nav-item" data-page="hyper-extract"><span class="nav-icon">🧩</span><span data-i18n="nav_hyper">Hyper-Extract</span></div>
     </div>
    <div class="sidebar-section">
       <div class="sidebar-label" data-i18n="nav_manage">Manage</div>
@@ -348,11 +360,12 @@ body{font-family:'Inter','Noto Sans SC','Noto Sans JP',-apple-system,BlinkMacSys
             <option value="all">All edges</option>
             <option value="wiki">Wiki + Tags</option>
             <option value="collection">By Collection</option>
+            <option value="hyper">Hyper Entities</option>
           </select>
           <button class="btn btn-secondary" id="graphDetailToggle" style="font-size:12px;padding:3px 8px;display:none;" title="Show individual document nodes">📂 Expand</button>
         </div>
       </div>
-      <p style="color:var(--text-secondary);margin-bottom:16px;font-size:14px;" data-i18n="graph_subtitle">Visualize connections between documents via [[wiki links]], shared tags, or collection membership.</p>
+      <p style="color:var(--text-secondary);margin-bottom:16px;font-size:14px;" data-i18n="graph_subtitle">Visualize connections between documents via [[wiki links]], shared tags, collection membership, or Hyper-Extract entities.</p>
       <div style="display:flex;gap:16px;">
         <div style="flex:1;">
           <div id="graphContainer" class="graph-container">
@@ -366,6 +379,77 @@ body{font-family:'Inter','Noto Sans SC','Noto Sans JP',-apple-system,BlinkMacSys
         </div>
         <!-- Legend sidebar -->
         <div id="graphLegend" class="graph-legend" style="display:none;min-width:200px;max-width:260px;"></div>
+      </div>
+    </section>
+    <!-- HYPER-EXTRACT -->
+    <section class="page-section" id="page-hyper-extract">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+        <h2 style="font-size:18px;font-weight:600;">🧩 <span data-i18n="hyper_title">Hyper-Extract Knowledge Graph</span></h2>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span id="hyperStats" style="font-size:13px;color:var(--text-secondary);"></span>
+        </div>
+      </div>
+      <p style="color:var(--text-secondary);margin-bottom:16px;font-size:14px;" data-i18n="hyper_subtitle">Extract entities and relationships from documents using LLM. Build a knowledge graph that complements QMD search.</p>
+      <!-- Extract Controls -->
+      <div class="card" style="margin-bottom:16px;">
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;">
+          <div class="form-group" style="flex:1;min-width:200px;margin-bottom:0;">
+            <label class="form-label" data-i18n="hyper_collection">Collection</label>
+            <select class="collection-select" id="hyperCollSelect" style="width:100%;"><option value="">-- Select collection --</option></select>
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label class="form-label" data-i18n="hyper_doc_id">Or Doc ID</label>
+            <input type="number" class="form-input" id="hyperDocId" placeholder="e.g. 42" style="width:120px;">
+          </div>
+          <button class="btn btn-primary" id="hyperExtractBtn" style="margin-bottom:4px;">🧠 <span data-i18n="hyper_extract_btn">Extract</span></button>
+          <button class="btn btn-secondary" id="hyperExtractAllBtn" style="margin-bottom:4px;">📚 <span data-i18n="hyper_extract_all">Extract All</span></button>
+          <button class="btn btn-danger" id="hyperClearBtn" style="margin-bottom:4px;">🗑️ <span data-i18n="hyper_clear">Clear Graph</span></button>
+          <button class="btn btn-secondary" id="hyperRefreshBtn" style="margin-bottom:4px;">🔄 <span data-i18n="hyper_refresh">Refresh</span></button>
+        </div>
+        <div id="hyperExtractProgress" style="margin-top:12px;display:none;">
+          <div style="height:4px;background:var(--bg-tertiary);border-radius:2px;overflow:hidden;">
+            <div id="hyperExtractBar" style="height:100%;width:0%;background:var(--accent);transition:width .3s;border-radius:2px;"></div>
+          </div>
+          <div id="hyperExtractStatus" style="margin-top:4px;font-size:12px;color:var(--text-secondary);"></div>
+        </div>
+        <div id="hyperExtractResult" style="margin-top:12px;font-size:13px;color:var(--text-secondary);"></div>
+      </div>
+      <!-- Entity Browser + Graph -->
+      <div style="display:flex;gap:16px;">
+        <!-- Entity list -->
+        <div style="width:320px;flex-shrink:0;">
+          <div class="card" style="padding:16px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+              <h3 style="font-size:14px;font-weight:600;" data-i18n="hyper_entities">Entities</h3>
+              <div style="display:flex;gap:4px;align-items:center;">
+                <span id="hyperEntityCount" style="font-size:12px;color:var(--text-tertiary);">0</span>
+                <button class="btn btn-secondary" style="font-size:11px;padding:2px 6px;" onclick="showHyperAddEntity()">➕</button>
+              </div>
+            </div>
+            <input type="text" class="form-input" id="hyperEntitySearch" placeholder="Search entities..." style="font-size:13px;padding:6px 10px;margin-bottom:8px;">
+            <div id="hyperEntityList" style="max-height:400px;overflow-y:auto;font-size:13px;">
+              <div style="color:var(--text-tertiary);padding:16px;text-align:center;" data-i18n="hyper_no_entities">No entities yet. Run extraction above.</div>
+            </div>
+          </div>
+        </div>
+        <!-- Graph -->
+        <div style="flex:1;">
+          <div class="card" style="padding:16px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+              <h3 style="font-size:14px;font-weight:600;" data-i18n="hyper_graph">Graph</h3>
+              <select id="hyperGraphLimit" style="font-size:12px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;background:var(--bg-primary);color:var(--text-primary);">
+                <option value="50">50 nodes</option>
+                <option value="100" selected>100 nodes</option>
+                <option value="300">300 nodes</option>
+              </select>
+            </div>
+            <div id="hyperGraphContainer" style="width:100%;height:500px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-primary);overflow:hidden;">
+              <div style="text-align:center;padding:80px 24px;color:var(--text-tertiary);">Run extraction or click Refresh to view graph</div>
+            </div>
+            <!-- Entity detail panel -->
+            <div id="hyperEntityDetail" style="display:none;margin-top:12px;padding:12px;background:var(--bg-tertiary);border-radius:var(--radius-sm);font-size:13px;"></div>
+          </div>
+        </div>
       </div>
     </section>
     <!-- ADD DOCS -->
@@ -469,17 +553,17 @@ body{font-family:'Inter','Noto Sans SC','Noto Sans JP',-apple-system,BlinkMacSys
       <div class="card" style="margin-bottom:16px;">
         <h3 style="margin-bottom:12px;">🧠 <span data-i18n="settings_embed_label">Embedding Model</span></h3>
         <p style="color:var(--text-secondary);font-size:13px;margin-bottom:16px;" data-i18n="settings_embed_desc">Converts text into vectors for semantic/vector search.</p>
-        <div class="form-group"><label class="form-label" data-i18n="settings_api_url">API URL</label><input class="form-input" id="settingsEmbedUrl" placeholder="http://127.0.0.1:1278/v1/embeddings"></div>
-        <div class="form-group"><label class="form-label" data-i18n="settings_model_name">Model Name</label><input class="form-input" id="settingsEmbedModel" placeholder="Qwen3-Embedding-0.6B"></div>
-        <div class="form-group"><label class="form-label" data-i18n="settings_embed_dim">Vector Dimension</label><input class="form-input" id="settingsEmbedDim" type="number" placeholder="1024"></div>
+        <div class="form-group"><label class="form-label" data-i18n="settings_api_url">API URL</label><input class="form-input" id="settingsEmbedUrl" placeholder="http://127.0.0.1:2780/v1/embeddings"></div>
+        <div class="form-group"><label class="form-label" data-i18n="settings_model_name">Model Name</label><input class="form-input" id="settingsEmbedModel" placeholder="embeddinggemma-300M-Q8_0.gguf"></div>
+        <div class="form-group"><label class="form-label" data-i18n="settings_embed_dim">Vector Dimension</label><input class="form-input" id="settingsEmbedDim" type="number" placeholder="768"></div>
       </div>
 
       <!-- Reranker Model -->
       <div class="card" style="margin-bottom:16px;">
         <h3 style="margin-bottom:12px;">📊 <span data-i18n="settings_rerank_label">Reranker Model</span></h3>
         <p style="color:var(--text-secondary);font-size:13px;margin-bottom:16px;" data-i18n="settings_rerank_desc">Re-ranks search results by relevance for better accuracy.</p>
-        <div class="form-group"><label class="form-label" data-i18n="settings_api_url">API URL</label><input class="form-input" id="settingsRerankUrl" placeholder="http://127.0.0.1:1245/v1/rerank"></div>
-        <div class="form-group"><label class="form-label" data-i18n="settings_model_name">Model Name</label><input class="form-input" id="settingsRerankModel" placeholder="Qwen3-Reranker-0.6B"></div>
+        <div class="form-group"><label class="form-label" data-i18n="settings_api_url">API URL</label><input class="form-input" id="settingsRerankUrl" placeholder="http://127.0.0.1:2781/v1/rerank"></div>
+        <div class="form-group"><label class="form-label" data-i18n="settings_model_name">Model Name</label><input class="form-input" id="settingsRerankModel" placeholder="qwen3-reranker-0.6b-q8_0.gguf"></div>
       </div>
 
       <!-- LLM Model -->
@@ -487,7 +571,7 @@ body{font-family:'Inter','Noto Sans SC','Noto Sans JP',-apple-system,BlinkMacSys
         <h3 style="margin-bottom:12px;">🧠 <span data-i18n="settings_llm_label">Brain / LLM</span></h3>
         <p style="color:var(--text-secondary);font-size:13px;margin-bottom:16px;" data-i18n="settings_llm_desc">Large Language Model for query expansion, summarization, and chat.</p>
         <div class="form-group"><label class="form-label" data-i18n="settings_api_url">API URL</label><input class="form-input" id="settingsLlmUrl" placeholder="http://localhost:1234/v1"></div>
-        <div class="form-group"><label class="form-label" data-i18n="settings_model_name">Model Name</label><input class="form-input" id="settingsLlmModel" placeholder="Qwen3.6-35B"></div>
+        <div class="form-group"><label class="form-label" data-i18n="settings_model_name">Model Name</label><input class="form-input" id="settingsLlmModel" placeholder="Qwen3.5-9B"></div>
         <div class="form-group"><label class="form-label" data-i18n="settings_api_key">API Key</label><input class="form-input" id="settingsLlmKey" type="password" placeholder="sk-..."></div>
         <div class="form-group"><label class="form-label" data-i18n="settings_ctx_window">Context Window (tokens)</label><input class="form-input" id="settingsLlmCtx" type="number" placeholder="32768"></div>
       </div>
@@ -556,11 +640,11 @@ body{font-family:'Inter','Noto Sans SC','Noto Sans JP',-apple-system,BlinkMacSys
 <script>
 // ============ I18N TRANSLATIONS ============
 const I18N = {
-  en: {brand_title:"QMD Index",nav_search:"Search",nav_graph:"Graph",nav_keyword:"Keyword Search",nav_semantic:"Semantic Search",nav_hybrid:"Hybrid Search",nav_manage:"Manage",nav_collections:"Collections Overview",nav_add_docs:"Add Documents",nav_import:"Import xl.meta",nav_tools:"Tools",nav_context:"Context",nav_expand:"Query Expand",nav_system:"System",nav_stats:"Statistics",nav_optimize:"Optimize",hero_title:"Search Your Knowledge Base",hero_subtitle:"BM25 keyword search across all indexed documents — instant results, zero latency.",hero_placeholder:'Search for anything... e.g. "golf design"',btn_search:"Search",opt_semantic:"Semantic (vec)",opt_all_collections:"All Collections",sem_title:"Semantic Search",sem_subtitle:"Find documents by meaning, not just keywords.",sem_placeholder:'Ask a question... e.g. "how to design a golf green?"',hybrid_title:"Hybrid Search (Query)",hybrid_subtitle:"Combine BM25 + semantic search with Reciprocal Rank Fusion.",hybrid_query_label:"Query",hybrid_intent_label:"Intent (optional)",hybrid_intent_placeholder:"Describe your search goal or context (optional)",coll_title:"Collections Overview",coll_subtitle:"Browse all indexed document collections and their sizes.",add_title:"Add Documents",add_pick_files:"Pick Files",add_pick_folder:"Pick Folder",add_or_label:"— or —",add_no_files:"No files selected",add_done:"Complete!",add_summary:"Summary:",add_errors:"Errors:",add_success:"Added!",add_subtitle:"Index new markdown, text, or rst files into a collection.",add_path_label:"File or Directory Path",add_coll_label:"Collection Name",add_recursive_label:"Scan subdirectories recursively",btn_add_index:"Add to Index",import_title:"Import xl.meta Files",import_subtitle:"Batch import MinIO xl.meta backup files into QMD collections.",import_path_label:"Base Directory",import_prefix_label:"Collection Prefix",btn_import:"Start Import",ctx_title:"Context Management",ctx_subtitle:"Add descriptive metadata to collections for better search relevance.",ctx_coll_label:"Collection Name",ctx_desc_label:"Context Description",btn_save_context:"Save Context",expand_title:"Query Expansion",expand_subtitle:"Expand your query into multiple search types (lex, vec, hyde).",expand_query_label:"Original Query",expand_intent_label:"User Intent (for hyde expansion)",btn_expand:"Expand & Search",stats_title:"Index Statistics",stats_subtitle:"Overview of index health and document counts.",opt_title:"Index Optimization",opt_subtitle:"Clean orphaned FTS entries and rebuild the index.",opt_standard_title:"Standard Optimization",opt_standard_desc:"Remove orphaned FTS entries and rebuild. Safe, no data loss.",opt_full_title:"Full Cleanup + Vacuum",opt_full_desc:"Permanently remove soft-deleted documents and compact DB.",btn_optimize:"Run Optimization",btn_vacuum:"Run Full Cleanup",btn_close:"Close",btn_edit:"Edit",btn_save:"Save",btn_cancel:"Cancel",btn_copy:"Copy",btn_split:"Split",btn_unsplit:"Unsplit",split_title:"Split view",confirm_ok:"OK",edit_title:"Edit content",save_title:"Save changes",cancel_title:"Cancel editing",copy_title:"Copy content",btn_language:"Language",btn_theme:"Toggle Theme",btn_upgrade:"Upgrade",add_path_placeholder:"Paste paths separated by commas or newlines",ctx_desc_placeholder:"Describe what this collection is about (optional)",btn_remove:"Remove",toast_saved:"Document saved!",toast_save_failed:"Save failed",toast_save_error:"Save error",toast_failed_load:"Failed to load",toast_failed:"Failed",toast_please_query:"Please enter a query",toast_done:"Done!",toast_removed:"Removed",toast_remove_failed:"Remove failed",toast_error:"Error",toast_upgrade_completed:"Upgrade completed!",toast_upgrade_failed:"Upgrade failed",toast_copied:"Copied to clipboard",toast_copy_manual:"Content selected, press Ctrl+C to copy",confirm_remove:"Remove this document? This cannot be undone.",confirm_vacuum:"This will permanently delete all soft-deleted documents. Continue?",confirm_upgrade_check:"Check for updates and attempt upgrade?",confirm_upgrade_git:"Attempt upgrade via git pull?",loading:"Loading...",no_results:"No matching documents found.",docs:"documents",nav_collection_docs:"Collection Docs",coll_docs_title:"Collection Documents",coll_docs_subtitle:"Browse and manage documents within a specific collection.",coll_docs_select_label:"Select Collection",coll_docs_load_btn:"Load Documents",remove_doc:"Remove",confirm_remove:"Are you sure you want to remove this document?",remove_success:"Document removed successfully!",remove_error:"Failed to remove document",copy:"Copy",copied:"Copied!",show_detail:"Show",nav_browse:"Browse",browse_folders:"Folders",browse_all_title:"All Collections",browse_filter_placeholder:"Filter files...",browse_select_msg:"Select a folder to view its files",confirm_remove_final:"Are you sure? This action cannot be undone."},
-  zh_TW: {brand_title:"QMD Index",nav_search:"搜尋",nav_graph:"圖譜",nav_keyword:"關鍵字搜尋",nav_semantic:"語意搜尋",nav_hybrid:"混合搜尋",nav_manage:"管理",nav_collections:"集合",nav_add_docs:"新增文件",nav_import:"匯入 xl.meta",nav_tools:"工具",nav_context:"上下文",nav_expand:"查詢擴展",nav_system:"系統",nav_stats:"統計",nav_optimize:"最佳化",hero_title:"搜尋你的知識庫",hero_subtitle:"BM25 關鍵字搜尋，遍歷所有已索引文件 — 即時結果，零延遲。",hero_placeholder:'搜尋任何內容... 例如 "golf design"',btn_search:"搜尋",opt_semantic:"語意 (vec)",opt_all_collections:"所有集合",sem_title:"語意搜尋",sem_subtitle:"透過意義而非僅關鍵字來尋找文件。",sem_placeholder:'提出問題... 例如 "如何設計高爾夫球場果嶺?"',hybrid_title:"混合搜尋 (Query)",hybrid_subtitle:"結合 BM25 + 語意搜尋，使用互逆等級融合技術。",hybrid_query_label:"查詢",hybrid_intent_label:"意圖（可選）",hybrid_intent_placeholder:"描述搜索目的或背景（可選）",coll_title:"集合管理",coll_subtitle:"瀏覽所有已索引的文件集合及其大小。",add_title:"新增文件",add_pick_files:"選擇檔案",add_pick_folder:"選擇資料夾",add_or_label:"— 或 —",add_no_files:"未選擇任何檔案",add_done:"完成！",add_summary:"摘要：",add_errors:"錯誤：",add_success:"已新增！",add_subtitle:"將新的 markdown、文字或 rst 文件加入集合。",add_path_label:"檔案或目錄路徑",add_coll_label:"集合名稱",add_recursive_label:"遞迴掃描子目錄",btn_add_index:"新增至索引",import_title:"匯入 xl.meta 檔案",import_subtitle:"批次匯入 MinIO xl.meta 備份檔案到 QMD 集合。",import_path_label:"基底目錄",import_prefix_label:"集合前綴",btn_import:"開始匯入",ctx_title:"上下文管理",ctx_subtitle:"為集合作描述性中繼資料，改善搜尋相關性。",ctx_coll_label:"集合名稱",ctx_desc_label:"上下文描述",btn_save_context:"儲存上下文",expand_title:"查詢擴展",expand_subtitle:"將你的查詢擴展為多種搜尋類型（lex、vec、hyde）。",expand_query_label:"原始查詢",expand_intent_label:"使用者意圖（用於 hyde 擴展）",btn_expand:"擴展並搜尋",stats_title:"索引統計",stats_subtitle:"索引健康狀況和文件數量的概覽。",opt_title:"索引最佳化",opt_subtitle:"清理孤立的 FTS 條目並重建索引。",opt_standard_title:"標準最佳化",opt_standard_desc:"移除孤立 FTS 條目並重建。安全，無資料遺失。",opt_full_title:"完整清理 + VACUUM",opt_full_desc:"永久刪除軟刪除的文件並壓縮資料庫。",btn_optimize:"執行最佳化",btn_vacuum:"執行完整清理",btn_close:"關閉",loading:"載入中...",no_results:"找不到相符的文件。",docs:"筆文件",nav_collection_docs:"集合文件",coll_docs_title:"集合文件",coll_docs_subtitle:"瀏覽和管理特定集合中的文件。",coll_docs_select_label:"選擇集合",coll_docs_load_btn:"加載文件",remove_doc:"移除",confirm_remove:"確定要移除此文件嗎？",remove_success:"文件已成功移除！",remove_error:"移除文件失敗",copy:"複製",copied:"已複製！",show_detail:"顯示",nav_browse:"Browse",browse_folders:"Folders",browse_all_title:"All Collections",browse_filter_placeholder:"Filter files...",browse_select_msg:'Select a folder to view its files',content_truncated:"Content truncated, more available...",no_content:"No content available",load_failed:"Failed to load document",confirm_remove:"Remove this document? This cannot be undone.",removed:"Removed",btn_split:"分割",btn_unsplit:"取消分割",split_title:"分割視圖",nav_browse:"瀏覽",browse_folders:"資料夾",browse_all_title:"所有集合",browse_filter_placeholder:"篩選文件...",browse_select_msg:"選擇一個資料夾以查看其文件"},
-  zh_CN: {brand_title:"QMD Index",nav_search:"搜索",nav_graph:"图谱",nav_keyword:"关键词搜索",nav_semantic:"语义搜索",nav_hybrid:"混合搜索",nav_manage:"管理",nav_collections:"集合",nav_add_docs:"添加文档",nav_import:"导入 xl.meta",nav_tools:"工具",nav_context:"上下文",nav_expand:"查询扩展",nav_system:"系统",nav_stats:"统计",nav_optimize:"优化",hero_title:"搜索你的知识库",hero_subtitle:"BM25 关键词搜索，遍历所有已索引文档 — 即时结果，零延迟。",hero_placeholder:'搜索任何内容... 例如 "golf design"',btn_search:"搜索",opt_semantic:"语义 (vec)",opt_all_collections:"所有集合",sem_title:"语义搜索",sem_subtitle:"通过意义而非仅关键词来查找文档。",sem_placeholder:'提出问题... 例如 "如何设计高尔夫球场果岭?"',hybrid_title:"混合搜索 (Query)",hybrid_subtitle:"结合 BM25 + 语义搜索，使用互逆等级融合技术。",hybrid_query_label:"查询",hybrid_intent_label:"意图（可选）",hybrid_intent_placeholder:"描述搜索目的或背景（可选）",coll_title:"集合管理",coll_subtitle:"浏览所有已索引的文档集合及其大小。",add_title:"添加文档",add_pick_files:"选择文件",add_pick_folder:"选择文件夹",add_or_label:"— 或 —",add_no_files:"未选择任何文件",add_done:"完成！",add_summary:"摘要：",add_errors:"错误：",add_success:"已添加！",add_subtitle:"将新的 markdown、文本或 rst 文件加入集合。",add_path_label:"文件或目录路径",add_coll_label:"集合名称",add_recursive_label:"递归扫描子目录",btn_add_index:"添加到索引",import_title:"导入 xl.meta 文件",import_subtitle:"批量导入 MinIO xl.meta 备份文件到 QMD 集合。",import_path_label:"基础目录",import_prefix_label:"集合前缀",btn_import:"开始导入",ctx_title:"上下文管理",ctx_subtitle:"为集合作者描述性元数据，改善搜索相关性。",ctx_coll_label:"集合名称",ctx_desc_label:"上下文描述",btn_save_context:"保存上下文",expand_title:"查询扩展",expand_subtitle:"将你的查询扩展为多种搜索类型（lex、vec、hyde）。",expand_query_label:"原始查询",expand_intent_label:"用户意图（用于 hyde 扩展）",btn_expand:"扩展并搜索",stats_title:"索引统计",stats_subtitle:"索引健康状况和文档数量的概览。",opt_title:"索引优化",opt_subtitle:"清理孤立的 FTS 条目并重建索引。",opt_standard_title:"标准优化",opt_standard_desc:"移除孤立 FTS 条目并重建。安全，无数据丢失。",opt_full_title:"完整清理 + VACUUM",opt_full_desc:"永久删除软删除的文档并压缩数据库。",btn_optimize:"执行优化",btn_vacuum:"执行完整清理",btn_close:"关闭",btn_edit:"编辑",btn_save:"保存",btn_cancel:"取消",confirm_ok:"确定",btn_copy:"复制",btn_split:"分屏",btn_unsplit:"取消分屏",split_title:"分屏视图",edit_title:"编辑内容",save_title:"保存修改",cancel_title:"取消编辑",copy_title:"复制内容",btn_language:"语言",btn_theme:"切换主题",btn_upgrade:"升级",add_path_placeholder:"粘贴路径，用逗号或换行分隔",ctx_desc_placeholder:"描述该集合的内容（可选）",btn_remove:"移除",toast_saved:"文档已保存！",toast_save_failed:"保存失败",toast_save_error:"保存出错",toast_failed_load:"加载失败",toast_failed:"失败",toast_please_query:"请输入查询",toast_done:"完成！",toast_removed:"已移除",toast_remove_failed:"移除失败",toast_error:"错误",toast_upgrade_completed:"升级完成！",toast_upgrade_failed:"升级失败",toast_copied:"已复制到剪贴板",toast_copy_manual:"内容已选中，请按 Ctrl+C 复制",confirm_remove:"确定移除该文档？此操作不可撤销。",confirm_vacuum:"这将永久删除所有已软删除的文档。是否继续？",confirm_upgrade_check:"检查更新并尝试升级？",confirm_upgrade_git:"尝试通过 git pull 升级？",loading:"加载中...",no_results:"找不到匹配的文档。",docs:"篇文档",nav_collection_docs:"集合文档",coll_docs_title:"集合文档",coll_docs_subtitle:"浏览和管理特定集合中的文档。",coll_docs_select_label:"选择集合",coll_docs_load_btn:"加载文档",remove_doc:"移除",confirm_remove:"确定要移除此文档吗？",remove_success:"文档已成功移除！",remove_error:"移除文档失败",copy:"复制",copied:"已复制！",show_detail:"显示",nav_browse:"浏览",browse_folders:"文件夹",browse_all_title:"所有集合",browse_filter_placeholder:"筛选文档...",content_truncated:"内容已截断，还有更多...",no_content:"没有内容",load_failed:"加载文档失败",browse_select_msg:"选择一个文件夹以查看其文档",confirm_remove_final:"再次确认：此操作无法恢复，确定删除？"},
-  ja: {brand_title:"QMD Index",nav_search:"検索",nav_graph:"グラフ",nav_keyword:"キーワード検索",nav_semantic:"セマンティック検索",nav_hybrid:"ハイブリッド検索",nav_manage:"管理",nav_collections:"コレクション",nav_add_docs:"ドキュメント追加",nav_import:"xl.meta インポート",nav_tools:"ツール",nav_context:"コンテキスト",nav_expand:"クエリ拡張",nav_system:"システム",nav_stats:"統計",nav_optimize:"最適化",hero_title:"ナレッジベースを検索",hero_subtitle:"BM25 キーワード検索で全インデックス文書を横断検索。即時結果、ゼロレイテンシ。",hero_placeholder:'何でも検索... 例 "golf design"',btn_search:"検索",opt_semantic:"セマンティック (vec)",opt_all_collections:"すべてのコレクション",sem_title:"セマンティック検索",sem_subtitle:"キーワードだけでなく意味でドキュメントを検索。",sem_placeholder:'質問を... 例 "ゴルフのグリーンをどう設計するか?"',hybrid_title:"ハイブリッド検索 (Query)",hybrid_subtitle:"BM25 + セマンティック検索を逆ランク融合で結合。",hybrid_query_label:"クエリ",hybrid_intent_label:"意図（オプション）",hybrid_intent_placeholder:"検索の目的や背景を記述（オプション）",coll_title:"コレクション管理",coll_subtitle:"すべてのインデックス済みコレクションとそのサイズを表示。",add_title:"ドキュメント追加",add_pick_files:"ファイルを選択",add_pick_folder:"フォルダを選択",add_or_label:"— または —",add_no_files:"ファイルが選択されていません",add_done:"完了！",add_summary:"概要：",add_errors:"エラー：",add_success:"追加完了！",add_subtitle:"新しい markdown、テキスト、rst ファイルをコレクションにインデックス。",add_path_label:"ファイルまたはディレクトリパス",add_coll_label:"コレクション名",add_recursive_label:"サブディレクトリを再帰的にスキャン",btn_add_index:"インデックスに追加",import_title:"xl.meta ファイルのインポート",import_subtitle:"MinIO xl.meta バックアップファイルを QMD コレクションに一括インポート。",import_path_label:"ベースディレクトリ",import_prefix_label:"コレクションプレフィックス",btn_import:"インポート開始",ctx_title:"コンテキスト管理",ctx_subtitle:"検索関連性を向上させるためにコレクションに説明的メタデータを追加。",ctx_coll_label:"コレクション名",ctx_desc_label:"コンテキスト説明",btn_save_context:"コンテキストを保存",expand_title:"クエリ拡張",expand_subtitle:"クエリを複数の検索タイプ（lex、vec、hyde）に展開。",expand_query_label:"元のクエリ",expand_intent_label:"ユーザー意図（hyde 展開用）",btn_expand:"展開して検索",stats_title:"インデックス統計",stats_subtitle:"インデックスの健全性とドキュメント数の概要。",opt_title:"インデックス最適化",opt_subtitle:"孤立した FTS エントリをクリーンアップしてインデックスを再構築。",opt_standard_title:"標準最適化",opt_standard_desc:"孤立的な FTS エントリを削除して再構築。安全、データ損失なし。",opt_full_title:"完全クリーンアップ + VACUUM",opt_full_desc:"ソフトデリートされたドキュメントを永久に削除し、DBを圧縮。",btn_optimize:"最適化を実行",btn_vacuum:"完全クリーンアップ実行",btn_close:"閉じる",loading:"読み込み中...",no_results:"一致するドキュメントが見つかりません。",docs:"件のドキュメント",nav_collection_docs:"コレクションファイル",coll_docs_title:"コレクション文書",coll_docs_subtitle:"特定のコレクション内のドキュメントを閲覧および管理。",coll_docs_select_label:"コレクションを選択",coll_docs_load_btn:"ドキュメントを読み込む",remove_doc:"削除",confirm_remove:"このドキュメントを削除してもよろしいですか？",remove_success:"ドキュメントが正常に削除されました！",remove_error:"ドキュメントの削除に失敗しました",copy:"コピー",copied:"コピーしました！",show_detail:"表示",nav_browse:"浏览",browse_folders:"文件夹",browse_all_title:"所有集合",browse_filter_placeholder:"筛选文档...",browse_select_msg:'选择文件夹以查看文档',content_truncated:"内容被截断，还有更多...",no_content:"没有内容",load_failed:"加载文档失败",confirm_remove:"确定移除此文档？此操作无法撤销。",removed:"已移除",nav_browse:"閲覧",browse_folders:"フォルダ",browse_all_title:"すべてのコレクション",browse_filter_placeholder:"ファイルでフィルター...",browse_select_msg:"フォルダを選択してファイルを表示"},
-  ko: {brand_title:"QMD Index",nav_search:"검색",nav_graph:"그래프",nav_keyword:"키워드 검색",nav_semantic:"시맨틱 검색",nav_hybrid:"하이브리드 검색",nav_manage:"관리",nav_collections:"컬렉션",nav_add_docs:"문서 추가",nav_import:"xl.meta 가져오기",nav_tools:"도구",nav_context:"컨텍스트",nav_expand:"쿼리 확장",nav_system:"시스템",nav_stats:"통계",nav_optimize:"최적화",hero_title:"지식베이스 검색",hero_subtitle:"모든 인덱스 문서에 대한 BM25 키워드 검색 — 즉시 결과, 지연 시간 제로.",hero_placeholder:'무엇이든 검색... 예 "golf design"',btn_search:"검색",opt_semantic:"시맨틱 (vec)",opt_all_collections:"모든 컬렉션",sem_title:"시맨틱 검색",sem_subtitle:"키워드뿐만 아니라 의미로 문서 찾기.",sem_placeholder:'질문하기... 예 "골프 그린을 어떻게 디자인할까?"',hybrid_title:"하이브리드 검색 (Query)",hybrid_subtitle:"BM25 + 시맨틱 검색을 역순위 융합으로 결합.",hybrid_query_label:"쿼리",hybrid_intent_label:"의도 (선택사항)",hybrid_intent_placeholder:"검색 목적이나 배경 설명 (선택사항)",coll_title:"컬렉션 관리",coll_subtitle:"모든 인덱싱된 문서 컬렉션과 크기를 탐색합니다.",add_title:"문서 추가",add_pick_files:"파일 선택",add_pick_folder:"폴더 선택",add_or_label:"— 또는 —",add_no_files:"파일이 선택되지 않았습니다",add_done:"완료!",add_summary:"요약:",add_errors:"오류:",add_success:"추가됨!",add_subtitle:"새로운 markdown, 텍스트 또는 rst 파일을 컬렉션에 인덱싱하세요.",add_path_label:"파일 또는 디렉토리 경로",add_coll_label:"컬렉션 이름",add_recursive_label:"하위 디렉토리 재귀적으로 스캔",btn_add_index:"인덱스에 추가",import_title:"xl.meta 파일 가져오기",import_subtitle:"MinIO xl.meta 백업 파일을 QMD 컬렉션에 일괄 가져오기.",import_path_label:"기본 디렉토리",import_prefix_label:"컬렉션 접두사",btn_import:"가져오기 시작",ctx_title:"컨텍스트 관리",ctx_subtitle:"더 나은 검색 관련성을 위해 컬렉션에 설명 메타데이터 추가.",ctx_coll_label:"컬렉션 이름",ctx_desc_label:"컨텍스트 설명",btn_save_context:"컨텍스트 저장",expand_title:"쿼리 확장",expand_subtitle:"쿼리를 여러 검색 유형(lex, vec, hyde)으로 확장합니다.",expand_query_label:"원본 쿼리",expand_intent_label:"사용자 의도 (hyde 확장용)",btn_expand:"확장 및 검색",stats_title:"인덱스 통계",stats_subtitle:"인덱스 상태와 문서 수 요약.",opt_title:"인덱스 최적화",opt_subtitle:"고아 FTS 항목 정리 및 인덱스 재빌드.",opt_standard_title:"표준 최적화",opt_standard_desc:"고아 FTS 항목 제거 및 재빌드. 안전, 데이터 손실 없음.",opt_full_title:"전체 정리 + VACUUM",opt_full_desc:"소프트 삭제된 문서를 영구적으로 제거하고 DB를 압축합니다.",btn_optimize:"최적화 실행",btn_vacuum:"전체 정리 실행",btn_close:"닫기",loading:"로딩 중...",no_results:"일치하는 문서를 찾을 수 없습니다.",docs:"개 문서",nav_collection_docs:"컬렉션 문서",coll_docs_title:"컬렉션 문서",coll_docs_subtitle:"특정 컬렉션의 문서를 탐색하고 관리합니다.",coll_docs_select_label:"컬렉션 선택",coll_docs_load_btn:"문서 로드",remove_doc:"삭제",confirm_remove:"이 문서를 삭제하시겠습니까?",remove_success:"문서가 성공적으로 삭제되었습니다!",remove_error:"문서 삭제에 실패했습니다",copy:"복사",copied:"복사됨!",show_detail:"보기",nav_browse:"関覧",browse_folders:"フォルダ",browse_all_title:"すべてのコレクション",browse_filter_placeholder:"ファイルでフィルタ...",browse_select_msg:'フォルダを選択してファイルを表示',content_truncated:"コンテンツが切り撃られました。さらにあります...",no_content:"コンテンツがありません",load_failed:"ドキュメントの読み込みに失敗しました",confirm_remove:"このドキュメントを削除してもよろしいですか？この操作は取り消せません。",removed:"削除しました",nav_browse:"검색",browse_folders:"폴더",browse_all_title:"모든 컬렉션",browse_filter_placeholder:"파일로 필터링...",browse_select_msg:"폴더를 선택하여 파일 보기"}}
+  en: {brand_title:"QMD Index",nav_search:"Search",nav_graph:"Graph",nav_hyper:"Hyper-Extract",nav_keyword:"Keyword Search",nav_semantic:"Semantic Search",nav_hybrid:"Hybrid Search",nav_manage:"Manage",nav_collections:"Collections Overview",nav_add_docs:"Add Documents",nav_import:"Import xl.meta",nav_tools:"Tools",nav_context:"Context",nav_expand:"Query Expand",nav_system:"System",nav_stats:"Statistics",nav_optimize:"Optimize",hyper_title:"Hyper-Extract Knowledge Graph",hyper_subtitle:"Extract entities and relationships from documents using LLM. Build a knowledge graph that complements QMD search.",hyper_collection:"Collection",hyper_doc_id:"Or Doc ID",hyper_extract_btn:"Extract",hyper_extract_all:"Extract All",hyper_clear:"Clear Graph",hyper_refresh:"Refresh",hyper_entities:"Entities",hyper_no_entities:"No entities yet. Run extraction above.",hyper_graph:"Graph",hero_title:"Search Your Knowledge Base",hero_subtitle:"BM25 keyword search across all indexed documents — instant results, zero latency.",hero_placeholder:'Search for anything... e.g. "golf design"',btn_search:"Search",opt_semantic:"Semantic (vec)",opt_all_collections:"All Collections",sem_title:"Semantic Search",sem_subtitle:"Find documents by meaning, not just keywords.",sem_placeholder:'Ask a question... e.g. "how to design a golf green?"',hybrid_title:"Hybrid Search (Query)",hybrid_subtitle:"Combine BM25 + semantic search with Reciprocal Rank Fusion.",hybrid_query_label:"Query",hybrid_intent_label:"Intent (optional)",hybrid_intent_placeholder:"Describe your search goal or context (optional)",coll_title:"Collections Overview",coll_subtitle:"Browse all indexed document collections and their sizes.",add_title:"Add Documents",add_pick_files:"Pick Files",add_pick_folder:"Pick Folder",add_or_label:"— or —",add_no_files:"No files selected",add_done:"Complete!",add_summary:"Summary:",add_errors:"Errors:",add_success:"Added!",add_subtitle:"Index new markdown, text, or rst files into a collection.",add_path_label:"File or Directory Path",add_coll_label:"Collection Name",add_recursive_label:"Scan subdirectories recursively",btn_add_index:"Add to Index",import_title:"Import xl.meta Files",import_subtitle:"Batch import MinIO xl.meta backup files into QMD collections.",import_path_label:"Base Directory",import_prefix_label:"Collection Prefix",btn_import:"Start Import",ctx_title:"Context Management",ctx_subtitle:"Add descriptive metadata to collections for better search relevance.",ctx_coll_label:"Collection Name",ctx_desc_label:"Context Description",btn_save_context:"Save Context",expand_title:"Query Expansion",expand_subtitle:"Expand your query into multiple search types (lex, vec, hyde).",expand_query_label:"Original Query",expand_intent_label:"User Intent (for hyde expansion)",btn_expand:"Expand & Search",stats_title:"Index Statistics",stats_subtitle:"Overview of index health and document counts.",opt_title:"Index Optimization",opt_subtitle:"Clean orphaned FTS entries and rebuild the index.",opt_standard_title:"Standard Optimization",opt_standard_desc:"Remove orphaned FTS entries and rebuild. Safe, no data loss.",opt_full_title:"Full Cleanup + Vacuum",opt_full_desc:"Permanently remove soft-deleted documents and compact DB.",btn_optimize:"Run Optimization",btn_vacuum:"Run Full Cleanup",btn_close:"Close",btn_edit:"Edit",btn_save:"Save",btn_cancel:"Cancel",btn_copy:"Copy",btn_split:"Split",btn_unsplit:"Unsplit",split_title:"Split view",confirm_ok:"OK",edit_title:"Edit content",save_title:"Save changes",cancel_title:"Cancel editing",copy_title:"Copy content",btn_language:"Language",btn_theme:"Toggle Theme",btn_upgrade:"Upgrade",add_path_placeholder:"Paste paths separated by commas or newlines",ctx_desc_placeholder:"Describe what this collection is about (optional)",btn_remove:"Remove",toast_saved:"Document saved!",toast_save_failed:"Save failed",toast_save_error:"Save error",toast_failed_load:"Failed to load",toast_failed:"Failed",toast_please_query:"Please enter a query",toast_done:"Done!",toast_removed:"Removed",toast_remove_failed:"Remove failed",toast_error:"Error",toast_upgrade_completed:"Upgrade completed!",toast_upgrade_failed:"Upgrade failed",toast_copied:"Copied to clipboard",toast_copy_manual:"Content selected, press Ctrl+C to copy",confirm_remove:"Remove this document? This cannot be undone.",confirm_vacuum:"This will permanently delete all soft-deleted documents. Continue?",confirm_upgrade_check:"Check for updates and attempt upgrade?",confirm_upgrade_git:"Attempt upgrade via git pull?",loading:"Loading...",no_results:"No matching documents found.",docs:"documents",nav_collection_docs:"Collection Docs",coll_docs_title:"Collection Documents",coll_docs_subtitle:"Browse and manage documents within a specific collection.",coll_docs_select_label:"Select Collection",coll_docs_load_btn:"Load Documents",remove_doc:"Remove",confirm_remove:"Are you sure you want to remove this document?",remove_success:"Document removed successfully!",remove_error:"Failed to remove document",copy:"Copy",copied:"Copied!",show_detail:"Show",nav_browse:"Browse",browse_folders:"Folders",browse_all_title:"All Collections",browse_filter_placeholder:"Filter files...",browse_select_msg:"Select a folder to view its files",confirm_remove_final:"Are you sure? This action cannot be undone."},
+  zh_TW: {brand_title:"QMD Index",nav_search:"搜尋",nav_graph:"圖譜",nav_hyper:"超量提取",nav_keyword:"關鍵字搜尋",nav_semantic:"語意搜尋",nav_hybrid:"混合搜尋",nav_manage:"管理",nav_collections:"集合",nav_add_docs:"新增文件",nav_import:"匯入 xl.meta",nav_tools:"工具",nav_context:"上下文",nav_expand:"查詢擴展",nav_system:"系統",nav_stats:"統計",nav_optimize:"最佳化",hyper_title:"超量提取知識圖譜",hyper_subtitle:"使用 LLM 從文件中提取實體與關係，建立知識圖譜，與 QMD 搜索互補。",hyper_collection:"集合",hyper_doc_id:"或文檔 ID",hyper_extract_btn:"提取",hyper_extract_all:"全部提取",hyper_clear:"清除圖譜",hyper_refresh:"重新整理",hyper_entities:"實體",hyper_no_entities:"尚無實體，請先執行提取。",hyper_graph:"圖譜",hero_title:"搜尋你的知識庫",hero_subtitle:"BM25 關鍵字搜尋，遍歷所有已索引文件 — 即時結果，零延遲。",hero_placeholder:'搜尋任何內容... 例如 "golf design"',btn_search:"搜尋",opt_semantic:"語意 (vec)",opt_all_collections:"所有集合",sem_title:"語意搜尋",sem_subtitle:"透過意義而非僅關鍵字來尋找文件。",sem_placeholder:'提出問題... 例如 "如何設計高爾夫球場果嶺?"',hybrid_title:"混合搜尋 (Query)",hybrid_subtitle:"結合 BM25 + 語意搜尋，使用互逆等級融合技術。",hybrid_query_label:"查詢",hybrid_intent_label:"意圖（可選）",hybrid_intent_placeholder:"描述搜索目的或背景（可選）",coll_title:"集合管理",coll_subtitle:"瀏覽所有已索引的文件集合及其大小。",add_title:"新增文件",add_pick_files:"選擇檔案",add_pick_folder:"選擇資料夾",add_or_label:"— 或 —",add_no_files:"未選擇任何檔案",add_done:"完成！",add_summary:"摘要：",add_errors:"錯誤：",add_success:"已新增！",add_subtitle:"將新的 markdown、文字或 rst 文件加入集合。",add_path_label:"檔案或目錄路徑",add_coll_label:"集合名稱",add_recursive_label:"遞迴掃描子目錄",btn_add_index:"新增至索引",import_title:"匯入 xl.meta 檔案",import_subtitle:"批次匯入 MinIO xl.meta 備份檔案到 QMD 集合。",import_path_label:"基底目錄",import_prefix_label:"集合前綴",btn_import:"開始匯入",ctx_title:"上下文管理",ctx_subtitle:"為集合作描述性中繼資料，改善搜尋相關性。",ctx_coll_label:"集合名稱",ctx_desc_label:"上下文描述",btn_save_context:"儲存上下文",expand_title:"查詢擴展",expand_subtitle:"將你的查詢擴展為多種搜尋類型（lex、vec、hyde）。",expand_query_label:"原始查詢",expand_intent_label:"使用者意圖（用於 hyde 擴展）",btn_expand:"擴展並搜尋",stats_title:"索引統計",stats_subtitle:"索引健康狀況和文件數量的概覽。",opt_title:"索引最佳化",opt_subtitle:"清理孤立的 FTS 條目並重建索引。",opt_standard_title:"標準最佳化",opt_standard_desc:"移除孤立 FTS 條目並重建。安全，無資料遺失。",opt_full_title:"完整清理 + VACUUM",opt_full_desc:"永久刪除軟刪除的文件並壓縮資料庫。",btn_optimize:"執行最佳化",btn_vacuum:"執行完整清理",btn_close:"關閉",loading:"載入中...",no_results:"找不到相符的文件。",docs:"筆文件",nav_collection_docs:"集合文件",coll_docs_title:"集合文件",coll_docs_subtitle:"瀏覽和管理特定集合中的文件。",coll_docs_select_label:"選擇集合",coll_docs_load_btn:"加載文件",remove_doc:"移除",confirm_remove:"確定要移除此文件嗎？",remove_success:"文件已成功移除！",remove_error:"移除文件失敗",copy:"複製",copied:"已複製！",show_detail:"顯示",nav_browse:"Browse",browse_folders:"Folders",browse_all_title:"All Collections",browse_filter_placeholder:"Filter files...",browse_select_msg:'Select a folder to view its files',content_truncated:"Content truncated, more available...",no_content:"No content available",load_failed:"Failed to load document",confirm_remove:"Remove this document? This cannot be undone.",removed:"Removed",btn_split:"分割",btn_unsplit:"取消分割",split_title:"分割視圖",nav_browse:"瀏覽",browse_folders:"資料夾",browse_all_title:"所有集合",browse_filter_placeholder:"篩選文件...",browse_select_msg:"選擇一個資料夾以查看其文件"},
+  zh_CN: {brand_title:"QMD Index",nav_search:"搜索",nav_graph:"图谱",nav_hyper:"超量提取",nav_keyword:"关键词搜索",nav_semantic:"语义搜索",nav_hybrid:"混合搜索",nav_manage:"管理",nav_collections:"集合",nav_add_docs:"添加文档",nav_import:"导入 xl.meta",nav_tools:"工具",nav_context:"上下文",nav_expand:"查询扩展",nav_system:"系统",nav_stats:"统计",nav_optimize:"优化",hyper_title:"超量提取知识图谱",hyper_subtitle:"使用 LLM 从文档中提取实体与关系，建立知识图谱，与 QMD 搜索互补。",hyper_collection:"集合",hyper_doc_id:"或文档 ID",hyper_extract_btn:"提取",hyper_extract_all:"全部提取",hyper_clear:"清除图谱",hyper_refresh:"刷新",hyper_entities:"实体",hyper_no_entities:"暂无实体，请先执行提取。",hyper_graph:"图谱",hero_title:"搜索你的知识库",hero_subtitle:"BM25 关键词搜索，遍历所有已索引文档 — 即时结果，零延迟。",hero_placeholder:'搜索任何内容... 例如 "golf design"',btn_search:"搜索",opt_semantic:"语义 (vec)",opt_all_collections:"所有集合",sem_title:"语义搜索",sem_subtitle:"通过意义而非仅关键词来查找文档。",sem_placeholder:'提出问题... 例如 "如何设计高尔夫球场果岭?"',hybrid_title:"混合搜索 (Query)",hybrid_subtitle:"结合 BM25 + 语义搜索，使用互逆等级融合技术。",hybrid_query_label:"查询",hybrid_intent_label:"意图（可选）",hybrid_intent_placeholder:"描述搜索目的或背景（可选）",coll_title:"集合管理",coll_subtitle:"浏览所有已索引的文档集合及其大小。",add_title:"添加文档",add_pick_files:"选择文件",add_pick_folder:"选择文件夹",add_or_label:"— 或 —",add_no_files:"未选择任何文件",add_done:"完成！",add_summary:"摘要：",add_errors:"错误：",add_success:"已添加！",add_subtitle:"将新的 markdown、文本或 rst 文件加入集合。",add_path_label:"文件或目录路径",add_coll_label:"集合名称",add_recursive_label:"递归扫描子目录",btn_add_index:"添加到索引",import_title:"导入 xl.meta 文件",import_subtitle:"批量导入 MinIO xl.meta 备份文件到 QMD 集合。",import_path_label:"基础目录",import_prefix_label:"集合前缀",btn_import:"开始导入",ctx_title:"上下文管理",ctx_subtitle:"为集合作者描述性元数据，改善搜索相关性。",ctx_coll_label:"集合名称",ctx_desc_label:"上下文描述",btn_save_context:"保存上下文",expand_title:"查询扩展",expand_subtitle:"将你的查询扩展为多种搜索类型（lex、vec、hyde）。",expand_query_label:"原始查询",expand_intent_label:"用户意图（用于 hyde 扩展）",btn_expand:"扩展并搜索",stats_title:"索引统计",stats_subtitle:"索引健康状况和文档数量的概览。",opt_title:"索引优化",opt_subtitle:"清理孤立的 FTS 条目并重建索引。",opt_standard_title:"标准优化",opt_standard_desc:"移除孤立 FTS 条目并重建。安全，无数据丢失。",opt_full_title:"完整清理 + VACUUM",opt_full_desc:"永久删除软删除的文档并压缩数据库。",btn_optimize:"执行优化",btn_vacuum:"执行完整清理",btn_close:"关闭",btn_edit:"编辑",btn_save:"保存",btn_cancel:"取消",confirm_ok:"确定",btn_copy:"复制",btn_split:"分屏",btn_unsplit:"取消分屏",split_title:"分屏视图",edit_title:"编辑内容",save_title:"保存修改",cancel_title:"取消编辑",copy_title:"复制内容",btn_language:"语言",btn_theme:"切换主题",btn_upgrade:"升级",add_path_placeholder:"粘贴路径，用逗号或换行分隔",ctx_desc_placeholder:"描述该集合的内容（可选）",btn_remove:"移除",toast_saved:"文档已保存！",toast_save_failed:"保存失败",toast_save_error:"保存出错",toast_failed_load:"加载失败",toast_failed:"失败",toast_please_query:"请输入查询",toast_done:"完成！",toast_removed:"已移除",toast_remove_failed:"移除失败",toast_error:"错误",toast_upgrade_completed:"升级完成！",toast_upgrade_failed:"升级失败",toast_copied:"已复制到剪贴板",toast_copy_manual:"内容已选中，请按 Ctrl+C 复制",confirm_remove:"确定移除该文档？此操作不可撤销。",confirm_vacuum:"这将永久删除所有已软删除的文档。是否继续？",confirm_upgrade_check:"检查更新并尝试升级？",confirm_upgrade_git:"尝试通过 git pull 升级？",loading:"加载中...",no_results:"找不到匹配的文档。",docs:"篇文档",nav_collection_docs:"集合文档",coll_docs_title:"集合文档",coll_docs_subtitle:"浏览和管理特定集合中的文档。",coll_docs_select_label:"选择集合",coll_docs_load_btn:"加载文档",remove_doc:"移除",confirm_remove:"确定要移除此文档吗？",remove_success:"文档已成功移除！",remove_error:"移除文档失败",copy:"复制",copied:"已复制！",show_detail:"显示",nav_browse:"浏览",browse_folders:"文件夹",browse_all_title:"所有集合",browse_filter_placeholder:"筛选文档...",content_truncated:"内容已截断，还有更多...",no_content:"没有内容",load_failed:"加载文档失败",browse_select_msg:"选择一个文件夹以查看其文档",confirm_remove_final:"再次确认：此操作无法恢复，确定删除？"},
+  ja: {brand_title:"QMD Index",nav_search:"検索",nav_graph:"グラフ",nav_hyper:"Hyper抽出",nav_keyword:"キーワード検索",nav_semantic:"セマンティック検索",nav_hybrid:"ハイブリッド検索",nav_manage:"管理",nav_collections:"コレクション",nav_add_docs:"ドキュメント追加",nav_import:"xl.meta インポート",nav_tools:"ツール",nav_context:"コンテキスト",nav_expand:"クエリ拡張",nav_system:"システム",nav_stats:"統計",nav_optimize:"最適化",hyper_title:"Hyper抽出ナレッジグラフ",hyper_subtitle:"LLMを使用してドキュメントからエンティティと関係を抽出し、QMD検索を補完する知識グラフを構築します。",hyper_collection:"コレクション",hyper_doc_id:"または文書ID",hyper_extract_btn:"抽出",hyper_extract_all:"すべて抽出",hyper_clear:"グラフをクリア",hyper_refresh:"更新",hyper_entities:"エンティティ",hyper_no_entities:"まだエンティティがありません。抽出を実行してください。",hyper_graph:"グラフ",hero_title:"ナレッジベースを検索",hero_subtitle:"BM25 キーワード検索で全インデックス文書を横断検索。即時結果、ゼロレイテンシ。",hero_placeholder:'何でも検索... 例 "golf design"',btn_search:"検索",opt_semantic:"セマンティック (vec)",opt_all_collections:"すべてのコレクション",sem_title:"セマンティック検索",sem_subtitle:"キーワードだけでなく意味でドキュメントを検索。",sem_placeholder:'質問を... 例 "ゴルフのグリーンをどう設計するか?"',hybrid_title:"ハイブリッド検索 (Query)",hybrid_subtitle:"BM25 + セマンティック検索を逆ランク融合で結合。",hybrid_query_label:"クエリ",hybrid_intent_label:"意図（オプション）",hybrid_intent_placeholder:"検索の目的や背景を記述（オプション）",coll_title:"コレクション管理",coll_subtitle:"すべてのインデックス済みコレクションとそのサイズを表示。",add_title:"ドキュメント追加",add_pick_files:"ファイルを選択",add_pick_folder:"フォルダを選択",add_or_label:"— または —",add_no_files:"ファイルが選択されていません",add_done:"完了！",add_summary:"概要：",add_errors:"エラー：",add_success:"追加完了！",add_subtitle:"新しい markdown、テキスト、rst ファイルをコレクションにインデックス。",add_path_label:"ファイルまたはディレクトリパス",add_coll_label:"コレクション名",add_recursive_label:"サブディレクトリを再帰的にスキャン",btn_add_index:"インデックスに追加",import_title:"xl.meta ファイルのインポート",import_subtitle:"MinIO xl.meta バックアップファイルを QMD コレクションに一括インポート。",import_path_label:"ベースディレクトリ",import_prefix_label:"コレクションプレフィックス",btn_import:"インポート開始",ctx_title:"コンテキスト管理",ctx_subtitle:"検索関連性を向上させるためにコレクションに説明的メタデータを追加。",ctx_coll_label:"コレクション名",ctx_desc_label:"コンテキスト説明",btn_save_context:"コンテキストを保存",expand_title:"クエリ拡張",expand_subtitle:"クエリを複数の検索タイプ（lex、vec、hyde）に展開。",expand_query_label:"元のクエリ",expand_intent_label:"ユーザー意図（hyde 展開用）",btn_expand:"展開して検索",stats_title:"インデックス統計",stats_subtitle:"インデックスの健全性とドキュメント数の概要。",opt_title:"インデックス最適化",opt_subtitle:"孤立した FTS エントリをクリーンアップしてインデックスを再構築。",opt_standard_title:"標準最適化",opt_standard_desc:"孤立的な FTS エントリを削除して再構築。安全、データ損失なし。",opt_full_title:"完全クリーンアップ + VACUUM",opt_full_desc:"ソフトデリートされたドキュメントを永久に削除し、DBを圧縮。",btn_optimize:"最適化を実行",btn_vacuum:"完全クリーンアップ実行",btn_close:"閉じる",loading:"読み込み中...",no_results:"一致するドキュメントが見つかりません。",docs:"件のドキュメント",nav_collection_docs:"コレクションファイル",coll_docs_title:"コレクション文書",coll_docs_subtitle:"特定のコレクション内のドキュメントを閲覧および管理。",coll_docs_select_label:"コレクションを選択",coll_docs_load_btn:"ドキュメントを読み込む",remove_doc:"削除",confirm_remove:"このドキュメントを削除してもよろしいですか？",remove_success:"ドキュメントが正常に削除されました！",remove_error:"ドキュメントの削除に失敗しました",copy:"コピー",copied:"コピーしました！",show_detail:"表示",nav_browse:"浏览",browse_folders:"文件夹",browse_all_title:"所有集合",browse_filter_placeholder:"筛选文档...",browse_select_msg:'选择文件夹以查看文档',content_truncated:"内容被截断，还有更多...",no_content:"没有内容",load_failed:"加载文档失败",confirm_remove:"确定移除此文档？此操作无法撤销。",removed:"已移除",nav_browse:"閲覧",browse_folders:"フォルダ",browse_all_title:"すべてのコレクション",browse_filter_placeholder:"ファイルでフィルター...",browse_select_msg:"フォルダを選択してファイルを表示"},
+  ko: {brand_title:"QMD Index",nav_search:"검색",nav_graph:"그래프",nav_hyper:"하이퍼 추출",nav_keyword:"키워드 검색",nav_semantic:"시맨틱 검색",nav_hybrid:"하이브리드 검색",nav_manage:"관리",nav_collections:"컬렉션",nav_add_docs:"문서 추가",nav_import:"xl.meta 가져오기",nav_tools:"도구",nav_context:"컨텍스트",nav_expand:"쿼리 확장",nav_system:"시스템",nav_stats:"통계",nav_optimize:"최적화",hyper_title:"하이퍼 추출 지식 그래프",hyper_subtitle:"LLM을 사용하여 문서에서 엔터티와 관계를 추출하고 QMD 검색을 보완하는 지식 그래프를 구축합니다.",hyper_collection:"컬렉션",hyper_doc_id:"또는 문서 ID",hyper_extract_btn:"추출",hyper_extract_all:"전체 추출",hyper_clear:"그래프 지우기",hyper_refresh:"새로고침",hyper_entities:"엔터티",hyper_no_entities:"아직 엔터티가 없습니다. 추출을 먼저 실행하세요.",hyper_graph:"그래프",hero_title:"지식베이스 검색",hero_subtitle:"모든 인덱스 문서에 대한 BM25 키워드 검색 — 즉시 결과, 지연 시간 제로.",hero_placeholder:'무엇이든 검색... 예 "golf design"',btn_search:"검색",opt_semantic:"시맨틱 (vec)",opt_all_collections:"모든 컬렉션",sem_title:"시맨틱 검색",sem_subtitle:"키워드뿐만 아니라 의미로 문서 찾기.",sem_placeholder:'질문하기... 예 "골프 그린을 어떻게 디자인할까?"',hybrid_title:"하이브리드 검색 (Query)",hybrid_subtitle:"BM25 + 시맨틱 검색을 역순위 융합으로 결합.",hybrid_query_label:"쿼리",hybrid_intent_label:"의도 (선택사항)",hybrid_intent_placeholder:"검색 목적이나 배경 설명 (선택사항)",coll_title:"컬렉션 관리",coll_subtitle:"모든 인덱싱된 문서 컬렉션과 크기를 탐색합니다.",add_title:"문서 추가",add_pick_files:"파일 선택",add_pick_folder:"폴더 선택",add_or_label:"— 또는 —",add_no_files:"파일이 선택되지 않았습니다",add_done:"완료!",add_summary:"요약:",add_errors:"오류:",add_success:"추가됨!",add_subtitle:"새로운 markdown, 텍스트 또는 rst 파일을 컬렉션에 인덱싱하세요.",add_path_label:"파일 또는 디렉토리 경로",add_coll_label:"컬렉션 이름",add_recursive_label:"하위 디렉토리 재귀적으로 스캔",btn_add_index:"인덱스에 추가",import_title:"xl.meta 파일 가져오기",import_subtitle:"MinIO xl.meta 백업 파일을 QMD 컬렉션에 일괄 가져오기.",import_path_label:"기본 디렉토리",import_prefix_label:"컬렉션 접두사",btn_import:"가져오기 시작",ctx_title:"컨텍스트 관리",ctx_subtitle:"더 나은 검색 관련성을 위해 컬렉션에 설명 메타데이터 추가.",ctx_coll_label:"컬렉션 이름",ctx_desc_label:"컨텍스트 설명",btn_save_context:"컨텍스트 저장",expand_title:"쿼리 확장",expand_subtitle:"쿼리를 여러 검색 유형(lex, vec, hyde)으로 확장합니다.",expand_query_label:"원본 쿼리",expand_intent_label:"사용자 의도 (hyde 확장용)",btn_expand:"확장 및 검색",stats_title:"인덱스 통계",stats_subtitle:"인덱스 상태와 문서 수 요약.",opt_title:"인덱스 최적화",opt_subtitle:"고아 FTS 항목 정리 및 인덱스 재빌드.",opt_standard_title:"표준 최적화",opt_standard_desc:"고아 FTS 항목 제거 및 재빌드. 안전, 데이터 손실 없음.",opt_full_title:"전체 정리 + VACUUM",opt_full_desc:"소프트 삭제된 문서를 영구적으로 제거하고 DB를 압축합니다.",btn_optimize:"최적화 실행",btn_vacuum:"전체 정리 실행",btn_close:"닫기",loading:"로딩 중...",no_results:"일치하는 문서를 찾을 수 없습니다.",docs:"개 문서",nav_collection_docs:"컬렉션 문서",coll_docs_title:"컬렉션 문서",coll_docs_subtitle:"특정 컬렉션의 문서를 탐색하고 관리합니다.",coll_docs_select_label:"컬렉션 선택",coll_docs_load_btn:"문서 로드",remove_doc:"삭제",confirm_remove:"이 문서를 삭제하시겠습니까?",remove_success:"문서가 성공적으로 삭제되었습니다!",remove_error:"문서 삭제에 실패했습니다",copy:"복사",copied:"복사됨!",show_detail:"보기",nav_browse:"関覧",browse_folders:"フォルダ",browse_all_title:"すべてのコレクション",browse_filter_placeholder:"ファイルでフィルタ...",browse_select_msg:'フォルダを選択してファイルを表示',content_truncated:"コンテンツが切り撃られました。さらにあります...",no_content:"コンテンツがありません",load_failed:"ドキュメントの読み込みに失敗しました",confirm_remove:"このドキュメントを削除してもよろしいですか？この操作は取り消せません。",removed:"削除しました",nav_browse:"검색",browse_folders:"폴더",browse_all_title:"모든 컬렉션",browse_filter_placeholder:"파일로 필터링...",browse_select_msg:"폴더를 선택하여 파일 보기"}}
 const LANG_LABELS = {en:'English',zh_TW:'繁體中文',zh_CN:'简体中文',ja:'日本語',ko:'한국어'};
 
 // Settings i18n (appended to each language)
@@ -623,6 +707,50 @@ const API_BASE = '';
 async function apiGet(path) { try { const r = await fetch(API_BASE + path); return await r.json(); } catch(e) { return {error:e.message}; } }
 async function apiPost(path, body) { try { const r = await fetch(API_BASE+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); return await r.json(); } catch(e) { return {error:e.message}; } }
 async function apiPut(path, body) { try { const r = await fetch(API_BASE+path,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); return await r.json(); } catch(e) { return {error:e.message}; } }
+async function apiDelete(path) { try { const r = await fetch(API_BASE+path,{method:'DELETE'}); return await r.json(); } catch(e) { return {error:e.message}; } }
+
+// SSE streaming POST: reads text/event-stream and calls onEvent for each event
+// Returns the last "complete" or "error" event as a promise
+async function ssePost(path, body, onEvent) {
+  try {
+    const r = await fetch(API_BASE + path, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) return {status: 'error', message: `HTTP ${r.status}`};
+    const reader = r.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    let lastEvent = null;
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, {stream: true});
+      // Parse SSE events: event:\n data:\n\n
+      const blocks = buf.split('\n\n');
+      buf = blocks.pop() || '';
+      for (const block of blocks) {
+        const lines = block.split('\n');
+        let eventType = 'message';
+        let dataStr = '';
+        for (const line of lines) {
+          if (line.startsWith('event: ')) eventType = line.slice(7);
+          else if (line.startsWith('data: ')) dataStr += line.slice(6);
+        }
+        if (dataStr) {
+          try {
+            const evt = JSON.parse(dataStr);
+            if (onEvent) onEvent(evt);
+            lastEvent = evt;
+          } catch(e) {}
+        }
+      }
+    }
+    return lastEvent || {status: 'error', message: 'No events received'};
+  } catch(e) {
+    return {status: 'error', message: e.message};
+  }
+}
 
 // ============ LANGUAGE DROPDOWN ============
 function buildLangMenu() {
@@ -904,10 +1032,14 @@ async function loadGraph() {
   const wikiCount = data.wiki_edge_count || 0;
   const tagCount = data.tag_edge_count || 0;
   const colCount = data.collection_edge_count || 0;
+  const hyperEntCount = data.hyper_entity_count || 0;
+  const hyperRelCount = data.hyper_rel_count || 0;
   let statsParts = [(aggregated ? data.node_count + ' collections' : data.node_count + ' nodes')];
   if (wikiCount) statsParts.push(wikiCount + ' wiki');
   if (tagCount) statsParts.push(tagCount + ' tag');
   if (colCount) statsParts.push(colCount + ' collection');
+  if (hyperEntCount) statsParts.push(hyperEntCount + ' entities');
+  if (hyperRelCount) statsParts.push(hyperRelCount + ' rels');
   statsEl.textContent = statsParts.join(' · ');
   document.getElementById('graphNodeInfo').style.display = 'none';
 
@@ -944,6 +1076,13 @@ async function loadGraph() {
       title = `📁 Collection: ${n.title}\n${docCount} documents`;
       value = 30;
       base = { shape: 'square', size: 20, borderWidth: 2, font: { size: 11, color: 'var(--text-secondary)', face: 'monospace' } };
+    } else if (n.hyper_entity) {
+      label = n.title.substring(0, 24);
+      title = `🧩 ${n.title}\n📂 ${n.entity_type || 'concept'}\n🔗 ${deg} connections`;
+      value = 15 + (deg / Math.max(maxDegree, 1)) * 15;
+      const etype = (n.entity_type || 'concept').toLowerCase();
+      const entityColors = { person: '#5B8C5A', organization: '#C4905A', location: '#5A90C4', technology: '#7B6B5A', concept: '#8A7FA8', term: '#9E9890' };
+      base = { shape: 'diamond', size: 18, borderWidth: 2, color: { background: entityColors[etype] || '#8A7FA8', border: entityColors[etype] || '#8A7FA8' }, font: { size: 11, color: 'var(--text-primary)', face: 'monospace' } };
     } else {
       label = n.title.substring(0, 28);
       title = `📄 ${n.title}\n📁 ${n.path}\n📚 ${n.collection}\n🔗 ${deg} connections`;
@@ -956,15 +1095,19 @@ async function loadGraph() {
   const edges = new vis.DataSet(graphDataEdges.map(e => {
     const isTag = e.type === 'tag';
     const isCol = e.type === 'collection';
+    const isHyper = e.type === 'hyper';
+    const isHyperDoc = e.type === 'hyper_doc';
     return {
       from: e.from,
       to: e.to,
-      arrows: isTag || isCol ? '' : 'to',
+      arrows: isTag || isCol || isHyperDoc ? '' : 'to',
       smooth: { type: 'curvedCW', roundness: 0.1 },
-      dashes: isTag || isCol,
-      color: isTag ? { color: '#888', inherit: false } : isCol ? { color: '#669', inherit: false, opacity: 0.4 } : { inherit: 'from' },
-      width: isTag ? 0.8 : isCol ? 0.6 : 1.5,
-      title: isTag ? `Shared tag: ${e.tag || '?'}` : isCol ? `Part of collection: ${e.collection || '?'}` : undefined,
+      dashes: isTag || isCol || isHyperDoc,
+      color: isTag ? { color: '#888', inherit: false } : isCol ? { color: '#669', inherit: false, opacity: 0.4 } : isHyper ? { color: '#8A7FA8', inherit: false, opacity: 0.6 } : isHyperDoc ? { color: '#7B6B5A', inherit: false, opacity: 0.3 } : { inherit: 'from' },
+      width: isTag ? 0.8 : isCol ? 0.6 : isHyper ? 1.2 : isHyperDoc ? 0.5 : 1.5,
+      label: isHyper ? (e.label || '').substring(0, 12) : undefined,
+      title: isTag ? `Shared tag: ${e.tag || '?'}` : isCol ? `Part of collection: ${e.collection || '?'}` : isHyper ? `Hyper: ${e.label || 'related-to'}` : isHyperDoc ? 'Linked document' : undefined,
+      font: isHyper ? { size: 9, color: '#8A7FA8', strokeWidth: 0 } : undefined,
     };
   }));
 
@@ -1026,6 +1169,17 @@ function showGraphNodeInfo(nodeId) {
       <div class="info-actions">
         <button class="btn btn-secondary" onclick="focusGraphNode(${nodeId})" style="font-size:13px;padding:4px 12px;">🎯 Focus</button>
         <button class="btn btn-secondary" onclick="filterGraphByCollection('${escapeJs(colName)}')" style="font-size:13px;padding:4px 12px;">📚 Browse collection</button>
+        <button class="btn btn-secondary" onclick="hideGraphNodeInfo()" style="font-size:13px;padding:4px 12px;">✕ Close</button>
+      </div>`;
+  } else if (node.hyper_entity) {
+    panel.innerHTML = `
+      <h4>🧩 ${escapeHtml(node.title || '')}</h4>
+      <div class="info-row"><span>Type</span><span>🏷️ ${escapeHtml(node.entity_type || 'concept')}</span></div>
+      <div class="info-row"><span>Entity ID</span><span>#${escapeHtml(node.entity_id || '')}</span></div>
+      <div class="info-row"><span>Connections</span><span>🔗 ${deg}</span></div>
+      <div class="info-actions">
+        <button class="btn btn-secondary" onclick="navigateToHyper()" style="font-size:13px;padding:4px 12px;">🧩 Open in Hyper</button>
+        <button class="btn btn-secondary" onclick="focusGraphNode(${nodeId})" style="font-size:13px;padding:4px 12px;">🎯 Focus</button>
         <button class="btn btn-secondary" onclick="hideGraphNodeInfo()" style="font-size:13px;padding:4px 12px;">✕ Close</button>
       </div>`;
   } else {
@@ -1376,17 +1530,24 @@ function escapeHtml(s){if(!s)return'';const d=document.createElement('div');d.te
 function escapeJs(s){if(!s)return'';return s.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\"');}
 function stripHtml(t){return t.replace(/<[^>]*>/g,'').replace(/\n{3,}/g,'\n\n');}
 
-function renderResults(cid, results) {
+function renderResults(cid, results, matchedEntities) {
   const c = document.getElementById(cid); if(!c) return;
   if(results.length===0){c.innerHTML=`<div class="empty-state"><div class="empty-icon">🔍</div><p>${t('no_results')}</p></div>`;return;}
   let html='';
+  if (matchedEntities && matchedEntities.length) {
+    html+=`<div style="margin-bottom:12px;font-size:13px;color:var(--text-secondary);">🧩 Entity matches: ${matchedEntities.map(e=>`<span class="entity-tag entity-${escapeHtml(e.type||'concept')}">${escapeHtml(e.name)}</span>`).join(' ')}</div>`;
+  }
   results.forEach((doc,i)=>{
     const score=doc.score||doc.similarity||(1-i*0.1).toFixed(3);
     const preview=doc.content?stripHtml(doc.content).substring(0,250):'';
+    const ents=doc.entities||[];
+    const entityMatch=doc.entity_matched||[];
     html+=`<div class="result-item" onclick='showDocDetail(${JSON.stringify(JSON.parse(JSON.stringify(doc))).replace(/'/g,'&#39;')})'>
-      <div class="result-header"><span class="result-title">${escapeHtml(doc.title)}</span><span class="result-score">${score}</span></div>
+      <div class="result-header"><span class="result-title">${escapeHtml(doc.title)}</span><span class="result-score">${entityMatch.length?'🧩':score}</span></div>
       ${doc.collection?`<span class="result-collection">${escapeHtml(doc.collection)}</span>`:''}
+      ${entityMatch.length?`<span style="font-size:11px;color:var(--accent)">Via entity: ${entityMatch.map(e=>escapeHtml(e.name)).join(', ')}</span>`:''}
       <div class="result-path">📁 ${escapeHtml(doc.path||'')}</div>
+      ${ents.length?`<div class="result-entities">${ents.map(e=>`<span class="entity-tag entity-${escapeHtml(e.type||'concept')}">${escapeHtml(e.name)}</span>`).join('')}</div>`:''}
       ${preview?`<div class="result-preview">${escapeHtml(preview)}...</div>`:''}</div>`;
   });
   c.innerHTML=html;
@@ -1636,8 +1797,14 @@ document.querySelectorAll('.nav-item[data-page]').forEach(item => {
     document.querySelectorAll('.page-section').forEach(s=>s.classList.remove('active'));
     const target=document.getElementById(`page-${page}`); if(target)target.classList.add('active');
     if(page==='browse'){loadFolderTree();browseSelectCollection('');}if(page==='stats')loadStats();
+    if(page==='hyper-extract'){loadHyperStatus();loadHyperCollections();loadHyperEntities();loadHyperGraph();}
   });
 });
+
+function navigateToPage(page) {
+  const navItem = document.querySelector(`.nav-item[data-page="${page}"]`);
+  if (navItem) navItem.click();
+}
 
 // ============ UNIFIED SEARCH MODE ============
 let currentSearchMode = 'keyword';
@@ -1683,7 +1850,7 @@ async function doUnifiedSearch() {
     document.getElementById('unifiedSearchResults').innerHTML = html || '<div class="empty-state">No results</div>';
   } else if (data.structured && data.structured.length > 0) {
     // Use structured results with doc IDs for clickable search results
-    renderResults('unifiedSearchResults', data.structured);
+    renderResults('unifiedSearchResults', data.structured, data.matched_entities);
   } else {
     renderResults('unifiedSearchResults', parseSearchResults(data.output || ''));
   }
@@ -2164,6 +2331,437 @@ document.getElementById('upgradeBtn').addEventListener('click',async()=>{
   if(data&&!data.error){msg+=`QMD Index: v${data.qmd_index?.local||'?'}\n`;msg+=`Latest: ${data.tobi_qmd?.latest_remote||'unknown'}\n`;
     if(confirm(t('confirm_upgrade_git'))){const ud=await apiPost('/api/upgrade',{});if(ud.success){showToast(t('toast_upgrade_completed'),'success');msg+='\n'+(ud.message||'');}else{showToast(t('toast_upgrade_failed')+': '+ud.error,'error');msg+='\n'+(ud.error||'');}}}
   if(msg) alert(msg);
+});
+
+// ============ HYPER-EXTRACT ============
+let hyperNetwork = null;
+let hyperEntityNodes = [];
+let hyperEntityEdges = [];
+
+async function loadHyperStatus() {
+  const data = await apiGet('/api/hyper/status');
+  if (data && !data.error) {
+    document.getElementById('hyperStats').textContent =
+      `🧩 ${data.entities} entities · ${data.relationships} relationships · ${data.doc_links} doc links`;
+    document.getElementById('hyperEntityCount').textContent = data.entities || 0;
+  }
+}
+
+async function loadHyperCollections() {
+  const data = await apiGet('/api/collections');
+  if (!data) return;
+  const rawLines = (data.output || '').split('\n');
+  const colls = [];
+  for (let i = 0; i < rawLines.length; i++) {
+    const m = rawLines[i].match(/^\[\d+\]\s+(ok|--)\s+(.+)$/);
+    if (m) colls.push(m[2].trim());
+  }
+  const sel = document.getElementById('hyperCollSelect');
+  sel.innerHTML = '<option value="">-- Select collection --</option>' +
+    colls.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+}
+
+async function loadHyperEntities() {
+  const q = document.getElementById('hyperEntitySearch').value.trim();
+  const url = q ? `/api/hyper/entities?q=${encodeURIComponent(q)}` : '/api/hyper/entities';
+  const data = await apiGet(url);
+  const list = document.getElementById('hyperEntityList');
+  if (!data || data.error) {
+    list.innerHTML = `<div style="color:var(--text-tertiary);padding:16px;text-align:center;">Error loading entities</div>`;
+    return;
+  }
+  if (data.count === 0) {
+    list.innerHTML = `<div style="color:var(--text-tertiary);padding:16px;text-align:center;" data-i18n="hyper_no_entities">No entities yet.</div>`;
+    return;
+  }
+  document.getElementById('hyperEntityCount').textContent = data.count;
+  let html = '';
+  data.entities.forEach(e => {
+    const typeColor = {person:'#5B8C5A',organization:'#C4905A',location:'#5A8C8C',technology:'#4A7B9C',concept:'#7B6B5A',term:'#8C5A8C'}[e.type] || '#7B6B5A';
+    html += `<div class="hyper-entity-item" data-id="${e.id}" onclick="showHyperEntityDetail(${e.id})" style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;transition:all .15s;border-bottom:1px solid var(--border);">
+      <span style="width:8px;height:8px;border-radius:50%;background:${typeColor};flex-shrink:0;"></span>
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(e.name)}</span>
+      <span style="font-size:11px;color:var(--text-tertiary);">${e.type || 'concept'}</span>
+    </div>`;
+  });
+  list.innerHTML = html;
+}
+
+async function showHyperEntityDetail(eid) {
+  const data = await apiGet(`/api/hyper/entities/${eid}`);
+  const panel = document.getElementById('hyperEntityDetail');
+  if (!data || data.error) { panel.style.display = 'none'; return; }
+  const e = data.entity;
+  const typeColor = {person:'#5B8C5A',organization:'#C4905A',location:'#5A8C8C',technology:'#4A7B9C',concept:'#7B6B5A',term:'#8C5A8C'}[e.type] || '#7B6B5A';
+  let html = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+    <h4 style="font-size:14px;font-weight:600;"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${typeColor};margin-right:6px;"></span>${escapeHtml(e.name)}</h4>
+    <div style="display:flex;gap:4px;">
+      <button class="btn btn-secondary" style="font-size:11px;padding:2px 6px;" onclick="showHyperEditEntity(${e.id})">✏️</button>
+      <button class="btn btn-danger" style="font-size:11px;padding:2px 6px;" onclick="deleteHyperEntity(${e.id})">🗑️</button>
+    </div>
+  </div>`;
+  html += `<div style="color:var(--text-secondary);margin-bottom:6px;"><strong>Type:</strong> ${e.type || 'concept'}</div>`;
+  if (e.description) html += `<div style="color:var(--text-secondary);margin-bottom:6px;"><strong>Description:</strong> ${escapeHtml(e.description)}</div>`;
+  // Relationships
+  html += `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
+    <strong style="font-size:12px;color:var(--text-secondary);">Relationships (${(data.relationships||[]).length})</strong>
+    <button class="btn btn-secondary" style="font-size:11px;padding:2px 6px;" onclick="showHyperAddRel(${e.id})">➕</button>
+  </div>`;
+  if (data.relationships && data.relationships.length > 0) {
+    data.relationships.forEach(r => {
+      const label = r.source_id === e.id ? `→ ${escapeHtml(r.target_name)}` : `← ${escapeHtml(r.source_name)}`;
+      html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 0;font-size:12px;color:var(--text-secondary);">
+        <span>${label} <em>${r.rel_type}</em></span>
+        <span style="cursor:pointer;color:var(--error);font-size:11px;" onclick="deleteHyperRel(${r.id})">✕</span>
+      </div>`;
+    });
+  } else {
+    html += `<div style="font-size:11px;color:var(--text-tertiary);padding:4px 0;">No relationships yet.</div>`;
+  }
+  // Documents
+  if (data.documents && data.documents.length > 0) {
+    html += `<div style="margin-top:8px;"><strong style="font-size:12px;color:var(--text-secondary);">Found in documents (${data.documents.length})</strong></div>`;
+    data.documents.forEach(d => {
+      html += `<div style="padding:2px 0;font-size:12px;cursor:pointer;color:var(--accent);" onclick="showDocFromBrowse(${d.doc_id})">📄 ${escapeHtml(d.title || d.path)}</div>`;
+    });
+  }
+  panel.innerHTML = html;
+  panel.style.display = 'block';
+  // Highlight in entity list
+  document.querySelectorAll('.hyper-entity-item').forEach(el => {
+    el.style.background = parseInt(el.dataset.id) === eid ? 'var(--accent-light)' : 'transparent';
+  });
+}
+
+async function deleteHyperEntity(eid) {
+  if (!confirm('Delete this entity and all its relationships?')) return;
+  const data = await apiDelete(`/api/hyper/entities/${eid}`);
+  if (data && data.success) {
+    showToast('Entity deleted', 'success');
+    document.getElementById('hyperEntityDetail').style.display = 'none';
+    loadHyperEntities();
+    loadHyperStatus();
+    loadHyperGraph();
+  } else {
+    showToast('Delete failed: ' + (data?.error || 'unknown'), 'error');
+  }
+}
+
+async function loadHyperGraph() {
+  const container = document.getElementById('hyperGraphContainer');
+  const limit = document.getElementById('hyperGraphLimit').value;
+  const data = await apiGet(`/api/hyper/graph?limit=${limit}`);
+  if (!data || data.error) {
+    container.innerHTML = `<div style="text-align:center;padding:80px 24px;color:var(--text-tertiary);">Error: ${escapeHtml(data?.error || '')}</div>`;
+    return;
+  }
+  if (data.nodes.length === 0) {
+    container.innerHTML = `<div style="text-align:center;padding:80px 24px;color:var(--text-tertiary);">No entities yet. Run extraction.</div>`;
+    return;
+  }
+  hyperEntityNodes = data.nodes;
+  hyperEntityEdges = data.edges;
+  const groupColors = {person:'#5B8C5A',organization:'#C4905A',location:'#5A8C8C',technology:'#4A7B9C',concept:'#7B6B5A',term:'#8C5A8C'};
+  const groups = {};
+  Object.values(groupColors).forEach((c, i) => {
+    const key = Object.keys(groupColors)[i];
+    groups[key] = { color: { background: c, border: c }, shape: 'dot' };
+  });
+  const visNodes = new vis.DataSet(data.nodes.map(n => ({
+    id: n.id, label: n.label || n.name, title: n.title || `${n.name} (${n.group})`,
+    group: n.group || 'concept', value: 15 + (hyperEntityEdges.filter(e => e.from === n.id || e.to === n.id).length) * 3,
+  })));
+  const visEdges = new vis.DataSet(data.edges.map(e => ({
+    from: e.from, to: e.to, label: e.label || '', title: e.title || '',
+    arrows: 'to', value: e.value || 1, width: e.width || 1.5,
+    font: { size: 10, color: 'var(--text-tertiary)' },
+    color: { color: 'var(--text-tertiary)', opacity: 0.5 },
+  })));
+  const options = {
+    physics: { solver: 'forceAtlas2Based', forceAtlas2Based: { gravitationalConstant: -30, springLength: 120 } },
+    interaction: { hover: true, tooltipDelay: 200 },
+    edges: { smooth: { type: 'curvedCW', roundness: 0.1 } },
+    nodes: { shape: 'dot', font: { size: 11, color: 'var(--text-primary)', face: 'monospace' } },
+    groups,
+  };
+  container.innerHTML = '';
+  hyperNetwork = new vis.Network(container, { nodes: visNodes, edges: visEdges }, options);
+  hyperNetwork.on('click', function(params) {
+    if (params.nodes.length > 0) showHyperEntityDetail(params.nodes[0]);
+  });
+}
+
+async function doHyperExtract() {
+  const coll = document.getElementById('hyperCollSelect').value;
+  const docId = document.getElementById('hyperDocId').value.trim();
+  const progress = document.getElementById('hyperExtractProgress');
+  const bar = document.getElementById('hyperExtractBar');
+  const status = document.getElementById('hyperExtractStatus');
+  const result = document.getElementById('hyperExtractResult');
+  progress.style.display = 'block';
+  bar.className = 'bar-indeterminate';
+  bar.style.width = '';
+  const start = Date.now();
+  let timerBase = '⏳ Starting extraction...';
+  const timer = setInterval(() => {
+    const sec = Math.floor((Date.now() - start) / 1000);
+    const m = String(Math.floor(sec / 60)).padStart(2, '0');
+    const s = String(sec % 60).padStart(2, '0');
+    status.textContent = timerBase + ` (${m}:${s})`;
+  }, 1000);
+  status.textContent = timerBase;
+  result.innerHTML = '';
+  const done = (ok, msg, extra) => {
+    clearInterval(timer);
+    bar.className = '';
+    bar.style.width = '100%';
+    status.textContent = ok ? msg : '❌ ' + msg;
+    if (extra) result.innerHTML = extra;
+    setTimeout(() => { progress.style.display = 'none'; }, 8000);
+  };
+  try {
+    if (docId) {
+      const data = await apiPost('/api/hyper/extract', { doc_id: parseInt(docId) });
+      if (data.error) {
+        done(false, 'Failed', `<div style="color:var(--error)">${escapeHtml(data.error)}</div>`);
+      } else {
+        const names = (data.entities || []).map(e => escapeHtml(e.name)).join(', ');
+        done(true, `✅ Extracted: ${data.entities_found} entities, ${data.relationships_found} relationships`,
+             names ? `<div>Entities: ${names}</div>` : '');
+        loadHyperEntities();
+        loadHyperStatus();
+        loadHyperGraph();
+      }
+    } else if (coll) {
+      timerBase = `⏳ Extracting collection "${coll}"...`;
+      status.textContent = timerBase;
+      bar.className = 'bar-indeterminate';
+      bar.style.width = '';
+      const result = await ssePost('/api/hyper/extract/batch', { collection: coll },
+        (evt) => {
+          if (evt.status === 'processing' || evt.status === 'started') {
+            const p = evt.processed || 0;
+            const t = evt.total || 1;
+            const pct = Math.round((p / t) * 100);
+            bar.className = '';
+            bar.style.width = pct + '%';
+            timerBase = `⏳ [${p}/${t}] Extracting "${coll}"...`;
+            status.textContent = timerBase;
+          }
+        }
+      );
+      if (result && result.status === 'complete') {
+        done(true, `✅ Processed ${result.processed || 0}/${result.total || 0} documents`);
+        loadHyperEntities();
+        loadHyperStatus();
+        loadHyperGraph();
+      } else {
+        done(false, 'Failed', `<div style="color:var(--error)">${escapeHtml(result?.message || 'unknown error')}</div>`);
+      }
+    } else {
+      done(false, 'Please select a collection or enter a doc ID');
+    }
+  } catch (e) {
+    done(false, 'Error', `<div style="color:var(--error)">${escapeHtml(e.message || e)}</div>`);
+  }
+}
+
+async function doHyperExtractAll() {
+  const progress = document.getElementById('hyperExtractProgress');
+  const bar = document.getElementById('hyperExtractBar');
+  const status = document.getElementById('hyperExtractStatus');
+  progress.style.display = 'block';
+  bar.className = 'bar-indeterminate';
+  bar.style.width = '';
+  const start = Date.now();
+  let timerBase = '⏳ Loading collections...';
+  status.textContent = timerBase;
+  const data = await apiGet('/api/collections');
+  if (!data) { status.textContent = '❌ Failed to load collections'; return; }
+  const rawLines = (data.output || '').split('\n');
+  const colls = [];
+  for (let i = 0; i < rawLines.length; i++) {
+    const m = rawLines[i].match(/^\[\d+\]\s+(ok|--)\s+(.+)$/);
+    if (m) colls.push(m[2].trim());
+  }
+  let processed = 0;
+  let total = colls.length;
+  for (let i = 0; i < colls.length; i++) {
+    timerBase = `[${i+1}/${total}] Extracting "${colls[i]}"...`;
+    status.textContent = timerBase;
+    const timer = setInterval(() => {
+      const sec = Math.floor((Date.now() - start) / 1000);
+      const m = String(Math.floor(sec / 60)).padStart(2, '0');
+      const s = String(sec % 60).padStart(2, '0');
+      status.textContent = timerBase + ` (${m}:${s})`;
+    }, 1000);
+    const result = await ssePost('/api/hyper/extract/batch', { collection: colls[i] },
+      (evt) => {
+        if (evt.status === 'processing' || evt.status === 'started') {
+          const pct = Math.round(((evt.processed || 0) / (evt.total || 1)) * 100);
+          bar.className = '';
+          bar.style.width = pct + '%';
+        }
+      }
+    );
+    clearInterval(timer);
+    processed += (result?.processed || 0);
+    bar.className = '';
+    bar.style.width = `${((i+1)/total)*100}%`;
+  }
+  bar.style.width = '100%';
+  status.textContent = `✅ Done. Processed ${processed} documents across ${total} collections.`;
+  loadHyperEntities();
+  loadHyperStatus();
+  loadHyperGraph();
+  setTimeout(() => { progress.style.display = 'none'; }, 8000);
+}
+
+async function doHyperClear() {
+  if (!confirm('Clear entire knowledge graph? All entities and relationships will be deleted.')) return;
+  const data = await apiPost('/api/hyper/clear', {});
+  if (data && data.success) {
+    showToast('Knowledge graph cleared', 'success');
+    document.getElementById('hyperEntityDetail').style.display = 'none';
+    loadHyperEntities();
+    loadHyperStatus();
+    loadHyperGraph();
+  } else {
+    showToast('Clear failed: ' + (data?.error || 'unknown'), 'error');
+  }
+}
+
+// ── Manual Entity/Relationship Editing ──
+
+async function showHyperAddEntity() {
+  const panel = document.getElementById('hyperEntityDetail');
+  panel.style.display = 'block';
+  const types = ['concept','person','organization','location','technology','term'];
+  panel.innerHTML = `
+    <h4 style="font-size:14px;font-weight:600;margin-bottom:8px;">➕ Add Entity</h4>
+    <div class="form-group"><label class="form-label">Name</label><input class="form-input" id="hyperNewEntName" style="font-size:13px;"></div>
+    <div class="form-group"><label class="form-label">Type</label><select class="form-input" id="hyperNewEntType" style="font-size:13px;">${types.map(t=>`<option value="${t}">${t}</option>`).join('')}</select></div>
+    <div class="form-group"><label class="form-label">Description</label><input class="form-input" id="hyperNewEntDesc" style="font-size:13px;"></div>
+    <div style="display:flex;gap:8px;margin-top:8px;">
+      <button class="btn btn-primary" style="font-size:13px;padding:6px 14px;" onclick="doHyperAddEntity()">Create</button>
+      <button class="btn btn-secondary" style="font-size:13px;padding:6px 14px;" onclick="document.getElementById('hyperEntityDetail').style.display='none'">Cancel</button>
+    </div>`;
+}
+
+async function doHyperAddEntity() {
+  const name = document.getElementById('hyperNewEntName').value.trim();
+  if (!name) { showToast('Entity name required', 'error'); return; }
+  const data = await apiPost('/api/hyper/entities', {
+    name, type: document.getElementById('hyperNewEntType').value,
+    description: document.getElementById('hyperNewEntDesc').value.trim(),
+  });
+  if (data && data.success) {
+    showToast(`Created entity: ${data.entity.name}`, 'success');
+    loadHyperEntities(); loadHyperStatus(); loadHyperGraph();
+    showHyperEntityDetail(data.entity.id);
+  } else {
+    showToast('Failed: ' + (data?.error || 'unknown'), 'error');
+  }
+}
+
+async function showHyperEditEntity(eid) {
+  const d = await apiGet(`/api/hyper/entities/${eid}`);
+  if (!d || !d.entity) return;
+  const e = d.entity;
+  const types = ['concept','person','organization','location','technology','term'];
+  const panel = document.getElementById('hyperEntityDetail');
+  panel.innerHTML = `
+    <h4 style="font-size:14px;font-weight:600;margin-bottom:8px;">✏️ Edit Entity</h4>
+    <div class="form-group"><label class="form-label">Name</label><input class="form-input" id="hyperEditEntName" value="${escapeHtml(e.name)}" style="font-size:13px;"></div>
+    <div class="form-group"><label class="form-label">Type</label><select class="form-input" id="hyperEditEntType" style="font-size:13px;">${types.map(t=>`<option value="${t}"${t===e.type?' selected':''}>${t}</option>`).join('')}</select></div>
+    <div class="form-group"><label class="form-label">Description</label><input class="form-input" id="hyperEditEntDesc" value="${escapeHtml(e.description||'')}" style="font-size:13px;"></div>
+    <div style="display:flex;gap:8px;margin-top:8px;">
+      <button class="btn btn-primary" style="font-size:13px;padding:6px 14px;" onclick="doHyperEditEntity(${eid})">Save</button>
+      <button class="btn btn-secondary" style="font-size:13px;padding:6px 14px;" onclick="showHyperEntityDetail(${eid})">Cancel</button>
+    </div>`;
+}
+
+async function doHyperEditEntity(eid) {
+  const data = await apiPut(`/api/hyper/entities/${eid}`, {
+    name: document.getElementById('hyperEditEntName').value.trim(),
+    type: document.getElementById('hyperEditEntType').value,
+    description: document.getElementById('hyperEditEntDesc').value.trim(),
+  });
+  if (data && data.success) {
+    showToast('Entity saved', 'success');
+    loadHyperEntities(); loadHyperStatus(); loadHyperGraph();
+    showHyperEntityDetail(eid);
+  } else {
+    showToast('Failed: ' + (data?.error || 'unknown'), 'error');
+  }
+}
+
+async function showHyperAddRel(eid) {
+  const ents = await apiGet('/api/hyper/entities?limit=200');
+  const options = (ents?.entities||[]).filter(e => e.id !== eid).map(e =>
+    `<option value="${e.id}">${escapeHtml(e.name)} (${e.type})</option>`).join('');
+  const panel = document.getElementById('hyperEntityDetail');
+  const types = ['related-to','part-of','located-in','depends-on','implements','uses','creates','works-for','threatens','visits','updates','points-to'];
+  panel.innerHTML += `
+    <div id="hyperAddRelForm" style="margin-top:8px;padding:8px;background:var(--bg-tertiary);border-radius:var(--radius-sm);">
+      <strong style="font-size:12px;color:var(--text-secondary);">New Relationship</strong>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;">
+        <select id="hyperRelTarget" style="flex:1;min-width:100px;font-size:12px;padding:3px 6px;">${options}</select>
+        <select id="hyperRelType" style="font-size:12px;padding:3px 6px;">${types.map(t=>`<option value="${t}">${t}</option>`).join('')}</select>
+        <button class="btn btn-primary" style="font-size:11px;padding:2px 8px;" onclick="doHyperAddRel(${eid})">Add</button>
+      </div>
+    </div>`;
+}
+
+async function doHyperAddRel(eid) {
+  const target = document.getElementById('hyperRelTarget').value;
+  const relType = document.getElementById('hyperRelType').value;
+  if (!target) { showToast('Select a target entity', 'error'); return; }
+  const data = await apiPost('/api/hyper/relationships', {
+    source_id: eid, target_id: parseInt(target), rel_type: relType,
+  });
+  if (data && data.success) {
+    showToast('Relationship added', 'success');
+    loadHyperGraph();
+    showHyperEntityDetail(eid);
+  } else {
+    showToast('Failed: ' + (data?.error || 'unknown'), 'error');
+  }
+}
+
+async function deleteHyperRel(rid) {
+  if (!confirm('Delete this relationship?')) return;
+  const data = await apiDelete(`/api/hyper/relationships/${rid}`);
+  if (data && data.success) {
+    showToast('Relationship deleted', 'success');
+    loadHyperGraph();
+    // Refresh the visible entity detail if any
+    const visible = document.querySelector('#hyperEntityDetail h4');
+    if (visible) {
+      const eid = document.querySelector('.hyper-entity-item[style*="accent-light"]')?.dataset.id;
+      if (eid) showHyperEntityDetail(parseInt(eid));
+    }
+  } else {
+    showToast('Failed: ' + (data?.error || 'unknown'), 'error');
+  }
+}
+
+// Hyper-Extract event listeners
+document.getElementById('hyperExtractBtn').addEventListener('click', doHyperExtract);
+document.getElementById('hyperExtractAllBtn').addEventListener('click', doHyperExtractAll);
+document.getElementById('hyperClearBtn').addEventListener('click', doHyperClear);
+document.getElementById('hyperRefreshBtn').addEventListener('click', () => {
+  loadHyperEntities();
+  loadHyperStatus();
+  loadHyperGraph();
+});
+document.getElementById('hyperGraphLimit').addEventListener('change', loadHyperGraph);
+document.getElementById('hyperEntitySearch').addEventListener('input', () => {
+  clearTimeout(window._hyperSearchTimer);
+  window._hyperSearchTimer = setTimeout(loadHyperEntities, 300);
+});
+document.getElementById('hyperDocId').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doHyperExtract();
 });
 
 // ============ INIT ============

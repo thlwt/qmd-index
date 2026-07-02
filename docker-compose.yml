@@ -1,0 +1,35 @@
+services:
+  qmd-webui:
+    build: .
+    container_name: qmd-webui
+    restart: unless-stopped
+    ports:
+      - "8090:8090"
+    volumes:
+      # Persist index database + vector data
+      - ./models:/app/models
+      # Keep settings editable without rebuild
+      - ./webui/settings.json:/app/webui/settings.json
+    environment:
+      - PYTHONUNBUFFERED=1
+      # Override LLM URL for Docker (host.docker.internal = host machine)
+      - LLM_URL=http://host.docker.internal:5000/v1
+    extra_hosts:
+      # Allow container to reach host services (LM Studio, embedding, reranker)
+      - "host.docker.internal:host-gateway"
+
+  qmd-mcp:
+    build: .
+    container_name: qmd-mcp
+    restart: unless-stopped
+    ports:
+      - "8010:8010"
+    volumes:
+      - ./models:/app/models
+    environment:
+      - PYTHONUNBUFFERED=1
+      - EMBEDDING_URL=http://host.docker.internal:2780/v1/embeddings
+      - QMD_DB_PATH=/app/models/qmd/index.sqlite
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: ["python", "qmd_mcp_server.py", "--transport", "sse", "--port", "8010"]

@@ -2,15 +2,25 @@
 QMD MCP Server - Exposes QMD's vector search as MCP tools.
 Uses the same SQLite index as qmd.py.
 """
-import sqlite3, os, json, hashlib, urllib.request, urllib.parse, re, math
+import sqlite3, os, json, hashlib, urllib.request, urllib.parse, re, math, sys
 from mcp.server.fastmcp import FastMCP
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(SCRIPT_DIR, "models", "qmd", "index.sqlite")
+DB_PATH = (os.environ.get("QMD_DB_PATH") or
+           os.path.join(SCRIPT_DIR, "models", "qmd", "index.sqlite"))
 VEC0_DLL = os.path.join(SCRIPT_DIR, "node_modules", "sqlite-vec-windows-x64", "vec0.dll")
-EMBEDDING_URL = 'http://127.0.0.1:1278/v1/embeddings'
+EMBEDDING_URL = (os.environ.get("EMBEDDING_URL") or 'http://127.0.0.1:2780/v1/embeddings')
 TAVILY_API_URL = 'https://api.tavily.com/search'
 SERPAPI_URL = 'https://serpapi.com/search.json'
+
+# ── Hyper-Extract helpers ──
+def get_hyper_db():
+    try:
+        sys.path.insert(0, os.path.join(SCRIPT_DIR, "webui"))
+        from hyper_extract.db import HyperDB as _HyperDB
+        return _HyperDB(DB_PATH)
+    except Exception:
+        return None
 
 mcp = FastMCP("QMD Search", log_level="WARNING")
 
@@ -275,5 +285,89 @@ Returns JSON with source, results array (title, content/preview, url/path, score
 
     return json.dumps({"source": "none", "results": [], "message": "No results found from QMD or web search."}, ensure_ascii=False, indent=2)
 
+@mcp.tool()
+def hyper_lookup(entity_name: str) -> str:
+    """
+Look up an entity in the Hyper-Extract knowledge graph by name.
+Returns entity info, relationships (neighbors), and linked documents.
+"""
+    hdb = get_hyper_db()
+    if not hdb:
+        return json.dumps({"error": "hyper_extract not available"}, ensure_ascii=False)
+    ent = hdb.find_entity(entity_name)
+    if not ent:
+        # try fuzzy match
+        matches = hdb.search_entities(entity_name, 5)
+        if matches:
+            ent = matches[0]
+        else:
+            hdb.close()
+            return json.dumps({"error": f"entity '{entity_name}' not found"}, ensure_ascii=False)
+    rels = hdb.get_relationships(ent["id"])
+    docs = hdb.get_entity_docs(ent["id"])
+    hdb.close()
+    return json.dumps({
+        "entity": {"id": ent["id"], "name": ent["name"], "type": ent["type"],
+                    "description": ent["description"]},
+        "relationships": [{"source": r["source_name"], "target": r["target_name"],
+                           "type": r["rel_type"], "weight": r["weight"]} for r in rels],
+        "documents": [{"id": d["doc_id"], "title": d["title"], "path": d["path"],
+                       "collection": d["collection"], "mentions": d["mentions"]} for d in docs],
+    }, ensure_ascii=False, indent=2)
+
+@mcp.tool()
+def hyper_search(query: str, limit: int = 20) -> str:
+    """
+Search the Hyper-Extract knowledge graph for entities matching a keyword query.
+Returns matching entities with their type, description, relationship count, and linked doc count.
+"""
+    hdb = get_hyper_db()
+    if not hdb:
+        return json.dumps({"error": "hyper_extract not available"}, ensure_ascii=False)
+    results = hdb.search_entities(query, limit)
+    output = []
+    for e in results:
+        rels = hdb.get_relationships(e["id"])
+        docs = hdb.get_entity_docs(e["id"])
+        output.append({
+            "id": e["id"], "name": e["name"], "type": e["type"],
+            "description": e["description"],
+            "relationship_count": len(rels),
+            "document_count": len(docs),
+        })
+    hdb.close()
+    return json.dumps({"query": query, "count": len(output), "results": output},
+                      ensure_ascii=False, indent=2)
+
+@mcp.tool()
+def hyper_doc_entities(doc_id: int) -> str:
+    """
+Get all Hyper-Extract entities linked to a document by its document ID.
+Returns entities with their type, description, and mention count.
+"""
+    hdb = get_hyper_db()
+    if not hdb:
+        return json.dumps({"error": "hyper_extract not available"}, ensure_ascii=False)
+    ents = hdb.get_doc_entities(doc_id)
+    hdb.close()
+    return json.dumps({
+        "doc_id": doc_id,
+        "entity_count": len(ents),
+        "entities": [{"id": e["entity_id"], "name": e["name"], "type": e["type"],
+                       "description": e["description"], "mentions": e["mentions"]} for e in ents],
+    }, ensure_ascii=False, indent=2)
+
 if __name__ == "__main__":
-    mcp.run(transport="stdio")
+    import argparse
+    parser = argparse.ArgumentParser(description="QMD MCP Server")
+    parser.add_argument("--transport", choices=["stdio", "sse"], default="stdio",
+                        help="MCP transport mode (default: stdio)")
+    parser.add_argument("--host", default="0.0.0.0", help="SSE host (default: 0.0.0.0)")
+    parser.add_argument("--port", type=int, default=8010, help="SSE port (default: 8010)")
+    args = parser.parse_args()
+    if args.transport == "sse":
+        import uvicorn
+        app = mcp.sse_app()
+        uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
+    else:
+        mcp.run(transport="stdio")
