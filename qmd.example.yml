@@ -31,8 +31,9 @@ models:
   reranker_model_url: "http://127.0.0.1:1245/v1"
   reranker_model_name: "your-reranker-model.gguf"
 
-  # Query Expansion model (local GGUF file)
-  query_expansion_model: "/path/to/your/query-expansion-model.gguf"
+  # Query Expansion model (OPTIONAL — search falls back gracefully without it)
+  # Enable by starting: llama-server.exe -m path/to/model.gguf --port 2782
+  # query_expansion_model: "/path/to/your/query-expansion-model.gguf"
 
 # Search defaults
 defaults:

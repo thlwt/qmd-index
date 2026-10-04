@@ -2,3 +2,4 @@ flask>=3.0
 flask-cors>=4.0
 requests>=2.31
 mcp>=1.0
+httpx>=0.25

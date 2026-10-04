@@ -243,15 +243,18 @@ def api_search():
     if structured:
         result["structured"] = structured
     # Entity-aware enrichment: find docs linked to entities matching query
+    conn = None
     try:
         db_path = _find_db_path()
         if db_path and os.path.exists(db_path):
             conn = sqlite3.connect(db_path)
             words = [w.strip().lower() for w in query.split() if len(w.strip()) > 1]
             if words:
-                like_clauses = " OR ".join(f"e.name LIKE '%{w}%'" for w in words)
+                like_params = [f"%{w}%" for w in words]
+                like_clauses = " OR ".join("e.name LIKE ?" for _ in words)
                 matched_entities = conn.execute(
-                    f"SELECT e.id, e.name, e.type FROM hyper_entities e WHERE {like_clauses} LIMIT 10"
+                    f"SELECT e.id, e.name, e.type FROM hyper_entities e WHERE {like_clauses} LIMIT 10",
+                    like_params
                 ).fetchall()
                 if matched_entities:
                     result["matched_entities"] = [{"id": r[0], "name": r[1], "type": r[2]} for r in matched_entities]
@@ -284,9 +287,11 @@ def api_search():
                                         "score": 0.5,
                                         "entity_matched": ents,
                                     })
-            conn.close()
     except Exception:
         pass
+    finally:
+        if conn:
+            conn.close()
     return jsonify(result)
 
 
@@ -297,6 +302,7 @@ def _enrich_search_with_ids(output_text, collection):
     db_path = _find_db_path()
     if not db_path or not os.path.exists(db_path):
         return None
+    conn = None
     try:
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
@@ -368,10 +374,12 @@ def _enrich_search_with_ids(output_text, collection):
                         r["entities"] = [{"id": e[0], "name": e[1], "type": e[2]} for e in ents]
                 except Exception:
                     pass
-        conn.close()
         return results
     except Exception:
         return None
+    finally:
+        if conn:
+            conn.close()
 
 
 @app.route("/api/search/json", methods=["GET"])
@@ -494,7 +502,7 @@ def api_search_vector():
 
     try:
         embed_url = SETTINGS.get("embedding_url", "http://127.0.0.1:1278/v1/embeddings")
-        embed_model = SETTINGS.get("embedding_model", "Qwen3-Embedding-0.6B")
+        embed_model = SETTINGS.get("embedding_model", "embed-gemma:300m")
         payload = json.dumps({"input": query, "model": embed_model}).encode("utf-8")
         req = urllib.request.Request(
             embed_url, data=payload,
@@ -518,47 +526,44 @@ def api_search_vector():
         if os.path.exists(vec0_path):
             conn.load_extension(vec0_path)
 
-        # Phase 1: vec0 MATCH
+        # Phase 1: vec0 ANN match (schema: hash_seq TEXT PK, embedding float[768])
         vec_bytes = struct.pack(f"{len(vector)}f", *vector)
-        vec_sql = """SELECT chunk_id, chunk_index, distance
-                     FROM vectors_vec
-                     WHERE v MATCH ? AND k=?
-                     ORDER BY distance ASC"""
-        vrows = conn.execute(vec_sql, (vec_bytes, limit * 2)).fetchall()
-        if not vrows:
-            conn.close()
-            return jsonify({"query": query, "results": [], "count": 0})
+        vrows = conn.execute(
+            "SELECT hash_seq, distance FROM vectors_vec "
+            "WHERE embedding MATCH ? AND k=? ORDER BY distance ASC",
+            (vec_bytes, limit * 5),
+        ).fetchall()
 
-        # Phase 2: resolve document details
-        chunk_ids = tuple(r[0] for r in vrows)
-        placeholders = ",".join("?" for _ in chunk_ids)
-        detail_sql = f"""SELECT cv.id, cv.chunk_index, cv.doc_id, cv.doc_path, cv.collection, cv.content
-                         FROM content_vectors cv
-                         WHERE cv.id IN ({placeholders})"""
-        try:
-            detail_rows = conn.execute(detail_sql, chunk_ids).fetchall()
-        except Exception:
-            detail_rows = []
-        detail_map = {r[0]: r for r in detail_rows}
-        conn.close()
-
+        # Phase 2: resolve document details by hash (one row per document)
         results = []
         seen = set()
-        for cid, chunk_idx, dist in vrows:
-            if cid in detail_map and cid not in seen:
-                seen.add(cid)
-                d = detail_map[cid]
-                results.append({
-                    "chunk_id": d[0],
-                    "chunk_index": d[1],
-                    "doc_id": d[2],
-                    "path": d[3],
-                    "collection": d[4],
-                    "content_preview": (d[5] or "")[:500],
-                    "score": round(1.0 - dist, 4),  # cosine: 1 - distance
-                })
-                if len(results) >= limit:
-                    break
+        for hash_seq, dist in vrows:
+            doc_hash, _, seq_s = str(hash_seq).rpartition("_")
+            if not doc_hash or doc_hash in seen:
+                continue
+            seen.add(doc_hash)
+            drow = conn.execute(
+                "SELECT id, path, collection FROM documents WHERE hash=? AND active=1 LIMIT 1",
+                (doc_hash,),
+            ).fetchone()
+            crow = conn.execute("SELECT doc FROM content WHERE hash=?", (doc_hash,)).fetchone()
+            try:
+                seq = int(seq_s)
+            except (ValueError, TypeError):
+                seq = 0
+            preview = (crow[0] or "")[seq * 512: seq * 512 + 512] if crow else ""
+            results.append({
+                "chunk_id": hash_seq,
+                "chunk_index": seq,
+                "doc_id": drow[0] if drow else None,
+                "path": drow[1] if drow else "",
+                "collection": drow[2] if drow else "",
+                "content_preview": preview[:500],
+                "score": round(1.0 - (dist or 0.0), 4),
+            })
+            if len(results) >= limit:
+                break
+        conn.close()
 
         return jsonify({"query": query, "results": results, "count": len(results)})
     except sqlite3.OperationalError as e:
@@ -906,15 +911,18 @@ def api_agent_search():
         pass
 
     # 2. Hyper-extract entities matched by query
+    conn = None
     try:
         db_path = _find_db_path()
         if db_path and os.path.exists(db_path):
             conn = sqlite3.connect(db_path)
             words = [w.strip().lower() for w in query.split() if len(w.strip()) > 1]
             if words:
-                like_clauses = " OR ".join(f"e.name LIKE '%{w}%'" for w in words)
+                like_params = [f"%{w}%" for w in words]
+                like_clauses = " OR ".join("e.name LIKE ?" for _ in words)
                 entities = conn.execute(
-                    f"SELECT e.id, e.name, e.type, e.description FROM hyper_entities e WHERE {like_clauses} LIMIT 10"
+                    f"SELECT e.id, e.name, e.type, e.description FROM hyper_entities e WHERE {like_clauses} LIMIT 10",
+                    like_params
                 ).fetchall()
                 if entities:
                     result["sources"]["entities"] = [
@@ -936,9 +944,11 @@ def api_agent_search():
                             ent["relationships"] = [
                                 {"type": r[0], "source": r[1], "target": r[2]} for r in rels
                             ]
-            conn.close()
     except Exception:
         pass
+    finally:
+        if conn:
+            conn.close()
 
     # 3. Web fallback via search_priority
     if include_web:
@@ -1184,7 +1194,7 @@ def api_reindex_document(doc_id):
                     batch_texts = [c[2] for c in chunks]
 
                     embed_url = SETTINGS.get("embedding_url", "http://127.0.0.1:1278/v1/embeddings")
-                    embed_model = SETTINGS.get("embedding_model", "Qwen3-Embedding-0.6B")
+                    embed_model = SETTINGS.get("embedding_model", "embed-gemma:300m")
                     now = datetime.now(timezone.utc).isoformat()
 
                     conn2.enable_load_extension(True)
@@ -2154,7 +2164,7 @@ def api_upload():
                         embed_conn.load_extension(vec0_dll)
 
                     embed_url = SETTINGS.get("embedding_url", "http://127.0.0.1:1278/v1/embeddings")
-                    embed_model = SETTINGS.get("embedding_model", "Qwen3-Embedding-0.6B")
+                    embed_model = SETTINGS.get("embedding_model", "embed-gemma:300m")
                     now = datetime.now(timezone.utc).isoformat()
 
                     for res in results:
@@ -2242,7 +2252,7 @@ SETTINGS_PATH = Path(__file__).resolve().parent / "settings.json"
 
 DEFAULT_SETTINGS = {
     "embedding_url": "http://127.0.0.1:2780/v1/embeddings",
-    "embedding_model": "embeddinggemma-300M-Q8_0.gguf",
+    "embedding_model": "embed-gemma:300m",
     "embedding_dim": 768,
     "reranker_url": "http://127.0.0.1:2781/v1/rerank",
     "reranker_model": "qwen3-reranker-0.6b-q8_0.gguf",
@@ -2396,33 +2406,53 @@ def api_upgrade():
 
 
 # ============================================================
-# Static file serving — our WebUI
+# Resources API — Read workspace files
 # ============================================================
 
-@app.route("/api/<path:filename>")
-def catch_all(filename):
-    """Serve static files from /static. Only matches single-segment paths."""
-    # Don't match multi-segment API paths — let Flask's URL dispatcher handle them
-    if "/" in filename:
-        return jsonify({"error": "Not found"}), 404
-    if filename.endswith(".html"):
-        return send_from_directory("static", filename)
-    return send_from_directory("static", filename)
+@app.route("/api/resources/<path:filename>", methods=["GET"])
+def get_resource(filename):
+    """Read a file from the QMD workspace.
+    
+    Returns the raw content of a markdown/text file in the workspace.
+    """
+    # Security: prevent path traversal
+    if ".." in filename or filename.startswith("/"):
+        return jsonify({"error": "Invalid filename"}), 400
+    
+    # Look for the file in common locations
+    search_paths = [
+        BASE_DIR / filename,
+        BASE_DIR / "docs" / filename,
+        BASE_DIR / "workspace" / filename,
+        Path("/app/workspace") / filename,
+        Path("/app/docs") / filename,
+    ]
+    
+    for path in search_paths:
+        if path.exists() and path.is_file():
+            try:
+                content = path.read_text(encoding="utf-8", errors="replace")
+                return jsonify({
+                    "filename": filename,
+                    "content": content,
+                    "size": len(content),
+                })
+            except Exception as e:
+                return jsonify({"error": f"Failed to read file: {str(e)}"}), 500
+    
+    return jsonify({"error": f"File not found: {filename}"}), 404
 
+
+# ============================================================
+# Entry point
+# ============================================================
 
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="QMD Index WebUI Server")
-    parser.add_argument("--port", type=int, default=PORT, help="Port to listen on (default: 8090)")
+    parser.add_argument("--port", type=int, default=PORT, help="Port to listen on")
+    parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")
     args = parser.parse_args()
+    print(f"Starting QMD Index WebUI on http://{args.host}:{args.port}")
+    app.run(host=args.host, port=args.port, debug=False)
 
-    print(f"\n{'='*60}")
-    print(f"  QMD Index WebUI — Starting Server")
-    print(f"{'='*60}")
-    print(f"  URL: http://localhost:{args.port}")
-    print(f"  Port: {args.port}")
-    print(f"  Root: {BASE_DIR}")
-    print(f"  qmd.py: {QMD_PY}")
-    print(f"{'='*60}\n")
-
-    app.run(host="0.0.0.0", port=args.port, debug=False)

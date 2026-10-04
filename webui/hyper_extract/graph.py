@@ -39,6 +39,17 @@ class HyperGraph:
         for rel in relationships:
             src = self.db.find_entity(rel["source"])
             tgt = self.db.find_entity(rel["target"])
+
+            # Auto-create any missing entities
+            if not src:
+                eid = self.db.upsert_entity(name=rel["source"], typ="concept")
+                self.db.link_doc_entity(doc_id, eid, contexts=[])
+                src = self.db.find_entity(rel["source"])
+            if not tgt:
+                eid = self.db.upsert_entity(name=rel["target"], typ="concept")
+                self.db.link_doc_entity(doc_id, eid, contexts=[])
+                tgt = self.db.find_entity(rel["target"])
+
             if src and tgt:
                 rid = self.db.upsert_relationship(
                     source_id=src["id"],
@@ -54,24 +65,6 @@ class HyperGraph:
                     "target": rel["target"],
                     "type": rel.get("type", "related-to"),
                 })
-            elif not src:
-                # Auto-create missing entity
-                eid = self.db.upsert_entity(name=rel["source"],
-                                            typ="concept")
-                src = self.db.find_entity(rel["source"])
-                self.db.link_doc_entity(doc_id, eid, contexts=[])
-                if src and tgt:
-                    rid = self.db.upsert_relationship(
-                        source_id=src["id"], target_id=tgt["id"],
-                        rel_type=rel.get("type", "related-to"),
-                        weight=1.0, context=rel.get("context", ""),
-                        source_doc=f"{doc_collection}/{doc_id}",
-                    )
-                    created_rels.append({
-                        "id": rid, "source": rel["source"],
-                        "target": rel["target"],
-                        "type": rel.get("type", "related-to"),
-                    })
 
         self.db.conn.commit()
         return {

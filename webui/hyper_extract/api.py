@@ -6,6 +6,10 @@ Exposes /api/hyper/* endpoints for knowledge graph operations.
 import json
 import sys
 import os
+import sqlite3
+import shutil
+import tempfile
+import threading
 from pathlib import Path
 
 from flask import Blueprint, request, jsonify, Response
@@ -13,6 +17,76 @@ from flask import Blueprint, request, jsonify, Response
 from .db import HyperDB
 from .extractor import HyperExtractor
 from .graph import HyperGraph
+
+# ── Docker 9p volume workaround (read path) ────────────────────────
+# Docker Desktop WSL2 mounts Windows directories through 9p (drvfs), which
+# cannot host SQLite's WAL shared-memory file: while a -wal file is present,
+# every statement on that mount fails with "disk I/O error". The same file
+# works on the host. When the database sits on a 9p mount, reads are served
+# from a local /tmp snapshot.
+#
+# The snapshot is read-only by design. A container is not a writer here:
+# copying a modified database back over the file the native host server holds
+# open leaves a stale -wal beside a replaced main file, which corrupts
+# indexes. Mutations are delegated to the host API instead.
+_IS_9P = False
+_ORIG_DB_PATH = None
+_TMP_DB_PATH = None
+
+# Every connection points at the same /tmp snapshot, so refreshing it must
+# not overlap another refresh.
+_db_lock = threading.Lock()
+
+
+def _detect_9p():
+    """Resolve the DB path and record whether it sits on a 9p mount."""
+    global _IS_9P, _ORIG_DB_PATH, _TMP_DB_PATH
+    db = _find_db_path()
+    if not db:
+        return False
+    _ORIG_DB_PATH = db
+    _TMP_DB_PATH = os.path.join(tempfile.gettempdir(), "qmd_index_copy.sqlite")
+    try:
+        with open("/proc/mounts") as handle:
+            for line in handle:
+                parts = line.split()
+                if len(parts) < 3 or parts[2] != "9p":
+                    continue
+                mount_point = parts[1].rstrip("/") or "/"
+                if mount_point == "/" or db.startswith(mount_point + "/"):
+                    _IS_9P = True
+                    return True
+    except OSError:
+        pass
+    _IS_9P = False
+    return False
+
+
+def _ensure_tmp_db():
+    """Return the DB path to read from, refreshing the /tmp snapshot."""
+    if not _IS_9P or not _ORIG_DB_PATH:
+        return _ORIG_DB_PATH
+    if not os.path.exists(_ORIG_DB_PATH):
+        return _ORIG_DB_PATH
+    src_mtime = os.path.getmtime(_ORIG_DB_PATH)
+    if (os.path.exists(_TMP_DB_PATH)
+            and os.path.getmtime(_TMP_DB_PATH) >= src_mtime):
+        return _TMP_DB_PATH
+    with _db_lock:
+        # Re-check under the lock: another request may have refreshed it.
+        if (os.path.exists(_TMP_DB_PATH)
+                and os.path.getmtime(_TMP_DB_PATH) >= src_mtime):
+            return _TMP_DB_PATH
+        shutil.copy2(_ORIG_DB_PATH, _TMP_DB_PATH)
+        for suffix in ("-wal", "-shm"):
+            src = _ORIG_DB_PATH + suffix
+            if os.path.exists(src):
+                try:
+                    shutil.copy2(src, _TMP_DB_PATH + suffix)
+                except OSError:
+                    pass
+    return _TMP_DB_PATH
+
 
 hyper_api = Blueprint("hyper_extract", __name__, url_prefix="/api/hyper")
 
@@ -49,13 +123,19 @@ def _find_db_path():
     return None
 
 
+# Resolve the read path once, now that _find_db_path exists.
+_detect_9p()
+
+
 def _get_hyper_db():
     """Create a new HyperDB instance per request (thread-safe)."""
-    db_path = _find_db_path()
+    db_path = _ensure_tmp_db()
     if not db_path or not os.path.exists(db_path):
         return None, "Cannot find index database"
     try:
         hdb = HyperDB(db_path)
+        # Attach a reference to the lock so handlers can use it
+        hdb._lock = _db_lock
         return hdb, None
     except Exception as e:
         return None, str(e)

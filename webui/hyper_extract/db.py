@@ -78,6 +78,7 @@ class HyperDB:
                 updated_at  = ?
         """, (name, typ, description, meta_json, now, now,
               typ, description, description, meta_json, meta_json, now))
+        self.conn.commit()
         return cur.lastrowid or self.conn.execute(
             "SELECT id FROM hyper_entities WHERE name=?", (name,)).fetchone()[0]
 
@@ -163,6 +164,7 @@ class HyperDB:
                 WHERE id=?
             """, (weight, context, context, source_doc, source_doc,
                   meta_json, now, existing[0]))
+            self.conn.commit()
             return existing[0]
         else:
             cur = self.conn.execute("""
@@ -170,6 +172,7 @@ class HyperDB:
                     (source_id, target_id, rel_type, weight, context, source_doc, metadata, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (source_id, target_id, rel_type, weight, context, source_doc, meta_json, now))
+            self.conn.commit()
             return cur.lastrowid
 
     def get_relationships(self, entity_id: int = None, limit: int = 200):
@@ -219,11 +222,13 @@ class HyperDB:
                     contexts = ?
                 WHERE id=?
             """, (ctx_json, existing[0]))
+            self.conn.commit()
         else:
             self.conn.execute("""
                 INSERT INTO hyper_doc_entities (doc_id, entity_id, mentions, contexts)
                 VALUES (?, ?, 1, ?)
             """, (doc_id, entity_id, ctx_json))
+            self.conn.commit()
 
     def get_doc_entities(self, doc_id: int):
         rows = self.conn.execute("""

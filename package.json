@@ -4,6 +4,6 @@
   "description": "On-device hybrid search for markdown files with BM25, vector search, and LLM reranking",
   "private": true,
   "dependencies": {
-    "@tobilu/qmd": "^2.0.1"
+    "@tobilu/qmd": "^2.5.3"
   }
 }

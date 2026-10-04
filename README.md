@@ -4,9 +4,15 @@
 
 Built on top of [@tobilu/qmd](https://github.com/tobi/qmd), QMD Index adds a Web UI, Hyper-Extract knowledge graph, MCP server, Docker support, and full Hermes Agent integration — fully local, no data leaves your machine.
 
+> **Canonical documentation for this machine's memory/knowledge system:**
+> [`D:\agent-os-registry\README.md`](../agent-os-registry/README.md) (human) and
+> [`D:\agent-os-registry\AGENTS.md`](../agent-os-registry/AGENTS.md) (agent).
+> This project owns `index.sqlite` and is its **sole writer**. See also
+> [`AGENTS.md`](AGENTS.md) for the agent-facing project guide.
+
 ## Features
 
-- **Hybrid Search** — BM25 keyword (FTS5) + semantic vector search + LLM reranking
+- **Hybrid Search** — BM25 keyword (FTS5) + semantic vector search + LLM reranking; Chinese compound words handled via jieba segmentation + multi-variant FTS5 queries + LIKE fallback
 - **Hyper-Extract Knowledge Graph** — LLM automatically extracts entities, relationships, and document links from your markdown files; browse and edit the graph visually
 - **Unified Graph View** — QMD document graph merged with Hyper entity graph in a single vis-network visualization (diamond-shaped entity nodes, type-colored, purple relationship edges)
 - **Entity-Aware Search** — When you search, results show matched entity tags; documents linked to matching entities are appended even if BM25 misses them
@@ -20,7 +26,7 @@ Built on top of [@tobilu/qmd](https://github.com/tobi/qmd), QMD Index adds a Web
 - **MCP Server** — 7 tools: `query`, `get`, `list_collections`, `search_priority`, `hyper_lookup`, `hyper_search`, `hyper_doc_entities`
 - **Web UI** — Flask-based interface with document browser, split-pane comparison, inline editing with Markdown preview, tag cloud, and graph visualization
 - **Multi-collection** — Organize documents into separate collections
-- **Docker Deployment** — Two containers: `qmd-webui` (Flask on `:8090`) and `qmd-mcp` (MCP SSE on `:8010`)
+- **Deployment** — QMD-Index itself runs as **host-native python** on `:8090` (the sole writer of `index.sqlite`); the two Docker containers are `qmd-mcp` (MCP SSE on `:8010`) and `qmd-wiki-hermes` (integration layer on `:8091`). The old `qmd-webui` container is retired — it cannot load the Windows `sqlite-vec` vec0 DLL and cannot use SQLite WAL on a 9p bind mount.
 - **Fully Local** — All processing uses local LLM, embedding, and reranker models
 
 ## Architecture
@@ -52,7 +58,7 @@ Built on top of [@tobilu/qmd](https://github.com/tobi/qmd), QMD Index adds a Web
 ┌───────▼──────────────┐                  ┌──────────────▼────────┐
 │  qmd-mcp (port 8010) │                  │  llama.cpp / LM Studio│
 │  MCP SSE Server      │                  │  LLM · Embedding      │
-│  7 MCP tools         │                  │  Reranker · Query Exp │
+│  7 MCP tools         │                  │  Reranker · QE (opt)  │
 └──────────────────────┘                  └───────────────────────┘
 ```
 
@@ -65,7 +71,8 @@ Built on top of [@tobilu/qmd](https://github.com/tobi/qmd), QMD Index adds a Web
 - **LM Studio** or **llama.cpp** server with:
   - Embedding model (e.g., `gemma-300M`)
   - Reranker model (e.g., `qwen3-reranker-0.6b`)
-  - LLM for query expansion + hyper-extract (e.g., `qwen/qwen3.5-9b`)
+  - (Optional) QE model for query expansion (e.g., `qmd-query-expansion-1.7B` on port 2782)
+  - LLM for hyper-extract (e.g., `qwen/qwen3.5-9b`)
 
 ### Local Installation
 
@@ -75,7 +82,7 @@ git clone https://github.com/thlwt/qmd-index.git
 cd qmd-index
 
 # 2. Python deps
-pip install flask flask-cors requests mcp
+pip install flask flask-cors requests mcp jieba
 
 # 3. Node.js deps
 bun install
@@ -97,15 +104,20 @@ Open http://localhost:8090.
 ### Docker (recommended for production)
 
 ```bash
-# Make sure LM Studio / models are running on host
-# Docker automatically routes to host via host.docker.internal
+# Make sure the LLM (:1235) and embedding/reranker models are running on the host
+# Docker reaches the host via host.docker.internal
 
-cd qmd-index
+# 1. QMD-Index itself: host-native python on :8090 (NOT a container)
+powershell -ExecutionPolicy Bypass -File D:\QMD-Index\webui\start_server.ps1
+
+# 2. The two containers
+cd D:\QMD-Index
 docker compose up -d
 ```
 
-Two services start:
-- **qmd-webui** — http://localhost:8090 (Flask UI + REST API)
+Three services run:
+- **QMD-Index** — http://localhost:8090 (Flask UI + REST API, host-native python, sole `index.sqlite` writer)
+- **qmd-wiki-hermes** — http://localhost:8091 (integration layer; reads a read-only `/tmp` snapshot, delegates writes to :8090)
 - **qmd-mcp** — http://localhost:8010/sse (MCP SSE endpoint)
 
 ## Configuration
@@ -114,21 +126,25 @@ Two services start:
 
 ```json
 {
-  "embedding_url": "http://127.0.0.1:2980/v1/embeddings",
-  "embedding_model": "gemma-300M",
+  "embedding_url": "http://127.0.0.1:1278/v1/embeddings",
+  "embedding_model": "embeddinggemma-300M-Q8_0.gguf",
   "embedding_dim": 768,
-  "reranker_url": "http://127.0.0.1:2981/v1/rerank",
-  "reranker_model": "qwen3-reranker-0.6b",
-  "llm_url": "http://127.0.0.1:5000/v1",
-  "llm_model": "qwen/qwen3.5-9b",
+  "reranker_url": "http://127.0.0.1:1245/v1/rerank",
+  "reranker_model": "qwen3-reranker-0.6b-q8_0.gguf",
+  "llm_url": "http://127.0.0.1:1239/v1",
+  "llm_model": "Qwen3VL-4B-Instruct-Q4_K_M.gguf",
   "llm_key": "",
   "llm_ctx": 32768,
-  "query_expansion_url": "http://127.0.0.1:2982/v1",
+  "query_expansion_url": "http://127.0.0.1:2782/v1",
   "query_expansion_model": "qmd-query-expansion-1.7B"
 }
 ```
 
-For Docker, `LLM_URL=http://host.docker.internal:5000/v1` and `EMBEDDING_URL=http://host.docker.internal:2780/v1/embeddings` environment variables override these settings.
+> **Query Expansion**: Port 2782 is **optional** — search falls back gracefully to the original query if QE is not running. To enable: start `llama-server.exe -m models\qmd-query-expansion-1.7B-q4_k_m.gguf --port 2782`.
+
+Ports are read from `qmd.yml` by default. For Docker CPU mode override with env vars: `QMD_EMBEDDING_URL=http://127.0.0.1:2780/v1/embeddings`, `QMD_RERANKER_URL=http://127.0.0.1:2781/v1/rerank`.
+
+> **Long documents** (>9,000 chars) are automatically split into multiple FTS5 chunks at paragraph/sentence boundaries. All chunks are joined transparently during search. Full content is preserved in the `content` table for vector embedding and LIKE fallback.
 
 ### `qmd.yml`
 
@@ -142,10 +158,10 @@ collections:
 
 models:
   embedding_model_url: "http://127.0.0.1:1278/v1"
-  embedding_model_name: "your-embedding-model.gguf"
-  embedding_dim: 1024
+  embedding_model_name: "embeddinggemma-300M-Q8_0.gguf"
+  embedding_dim: 768
   reranker_model_url: "http://127.0.0.1:1245/v1"
-  reranker_model_name: "your-reranker-model.gguf"
+  reranker_model_name: "qwen3-reranker-0.6b-q8_0.gguf"
   query_expansion_model: "/path/to/query-expansion.gguf"
 
 defaults:
@@ -254,7 +270,7 @@ Hermes config:
 mcp_servers:
   qmd:
     command: python
-    args: ["E:\\QMD-Index\\qmd_mcp_server.py"]
+    args: ["D:\\QMD-Index\\qmd_mcp_server.py"]
 ```
 
 Available tools: `query`, `get`, `list_collections`, `search_priority`, `hyper_lookup`, `hyper_search`, `hyper_doc_entities`.
@@ -308,7 +324,7 @@ docker compose up -d
 |---|---|---|
 | `LLM_URL` | (from settings.json) | Override LLM API URL (e.g., `http://host.docker.internal:5000/v1`) |
 | `LLM_MODEL` | (from settings.json) | Override LLM model name |
-| `EMBEDDING_URL` | `http://127.0.0.1:2780/v1/embeddings` | Embedding service URL (used by MCP server) |
+| `QMD_EMBEDDING_URL` / `EMBEDDING_URL` | `http://127.0.0.1:1278/v1/embeddings` | Embedding service URL (used by MCP server); override to `2780` for Docker CPU mode |
 | `QMD_DB_PATH` | `models/qmd/index.sqlite` | Database path override |
 | `TAVILY_API_KEY` | (unset) | Tavily API key for web search fallback |
 
@@ -335,7 +351,7 @@ The knowledge graph is stored in `index.sqlite` under three tables:
 2. LLM returns JSON with `entities[]` and `relationships[]`
 3. Extractor handles reasoning models (combines `content` + `reasoning_content`)
 4. Balanced-brace JSON parser (`_extract_json_block`) extracts valid JSON even with surrounding text
-5. Entities are upserted (deduplicated by name), relationships merged (max weight wins)
+5. Entities are upserted (deduplicated by name); any missing source/target entities are auto-created before relationship insertion
 6. Doc-entity links are recorded with mention contexts
 7. SSE events stream progress per document back to the client
 
@@ -364,8 +380,8 @@ The extractor detects reasoning models (those that output thinking in `reasoning
 # List all collections
 python qmd.py list
 
-# Search (keyword BM25)
-python qmd.py search "your query"
+# Search (keyword BM25 — Chinese compound words auto-segmented by jieba)
+python qmd.py search "高尔夫球场灌溉系统设计"
 
 # Search with semantic reranking
 python qmd.py search "your query" --semantic

@@ -1,15 +1,19 @@
-# Start QMD Index WebUI Server
-# Run this script from the webui directory, or adjust the path to server.py below.
+# Start QMD Index WebUI natively on Windows.
+# Required instead of the Docker container because sqlite-vec vec0 is a Windows DLL
+# (node_modules/sqlite-vec-windows-x64/vec0.dll) that the Linux container cannot load.
+param([int]$Port = 8090)
 
-$scriptPath = Join-Path $PSScriptRoot "server.py"
-$port = if ($args[0]) { $args[0] } else { 8090 }
+$py = "C:\Users\user\AppData\Local\Programs\Python\Python311\python.exe"
+$script = Join-Path $PSScriptRoot "server.py"
+$log = Join-Path $PSScriptRoot "server_native.log"
+$err = Join-Path $PSScriptRoot "server_native.err"
 
-$psi = New-Object System.Diagnostics.ProcessStartInfo
-$psi.FileName = "python"
-$psi.Arguments = "`"$scriptPath`" --port $port"
-$psi.WorkingDirectory = $PSScriptRoot
-$psi.UseShellExecute = $true
-$psi.CreateNoWindow = $false
-$psi.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
-$p = [System.Diagnostics.Process]::Start($psi)
-Write-Output "QMD Index server started on port $port (PID: $($p.Id))"
+# free the port if something is already listening
+Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
+    ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
+Start-Sleep 1
+
+Start-Process -FilePath $py -ArgumentList $script, "--host", "0.0.0.0", "--port", $Port `
+    -WorkingDirectory $PSScriptRoot -RedirectStandardOutput $log -RedirectStandardError $err -WindowStyle Hidden
+
+Write-Output "QMD Index WebUI (native, vec0) started on port $Port  (log: $log)"

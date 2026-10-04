@@ -9,7 +9,7 @@ Write-Host ""
 Get-Process -Name "llama-server" -ErrorAction SilentlyContinue | Stop-Process -Force
 
 # Start Docker containers
-Set-Location -LiteralPath "E:\QMD-Index"
+Set-Location -LiteralPath "D:\QMD-Index"
 docker compose up -d
 
 Write-Host ""

@@ -2,48 +2,59 @@
 # D:\QMD-Index\qmd.yml
 
 collections:
-  # OpenClaw workspace - primary knowledge base
-  openclaw:
-    path: C:/Users/sile1618/.openclaw/workspace
+  # Obsidian Vault - General Knowledge (animal biology, architecture, landscape design, etc.)
+  obsidian-general-knowledge:
+    path: C:/Users/user/Documents/Obsidian Vault/QMD-Knowledge
     pattern: "**/*.md"
     ignore:
       - "node_modules/**"
       - ".git/**"
-      - "skills/**/node_modules/**"
-      - "**/.venv/**"
-  
-  # OpenClaw memory (long-term memory)
-  openclaw-memory:
-    path: C:/Users/sile1618/.openclaw/workspace/memory
+
+  # Obsidian Vault - Su Family Farm (生态农场项目)
+  su-family-farm:
+    path: C:/Users/user/AppData/Local/hermes/obsidian-vaults/su-family-farm
     pattern: "**/*.md"
     ignore:
-      - "backups/**"
-      - ".dreams/**"
+      - "node_modules/**"
+      - ".git/**"
 
-  # OpenClaw skills documentation
-  openclaw-skills:
-    path: C:/Users/sile1618/.openclaw/workspace/skills
-    pattern: "**/SKILL.md"
+  # Obsidian Vault - Nusantara Township (高尔夫造镇项目)
+  nusantara-township:
+    path: D:/景观与高尔夫规划设计施工/努山塔拉高爾夫造鎮計畫
+    pattern: "**/*.md"
+    ignore:
+      - "node_modules/**"
+      - ".git/**"
+
+  # Golf Course Design Knowledge (高尔夫球场设计专业知识库)
+  golf-course-design:
+    path: D:/景观与高尔夫规划设计施工/golf_kb
+    pattern: "**/*.md"
 
 # Global context
-global_context: "OpenClaw AI 助手系统知识库，包含配置文件、技能文档、对话记忆"
+global_context: "苏爸爸生态农场项目 + 努山塔拉高尔夫造镇项目 + 高尔夫球场设计专业知识库，包含景观设计与高尔夫球场设计专业知识、高尔夫设计趋势与案例"
 
 # Model configuration
-# Docker CPU setup — ports 2780 (embedding) / 2781 (reranker)
-# Port 2780: embeddinggemma-300M-Q8_0.gguf (向量模型)
-# Port 2781: qwen3-reranker-0.6b-q8_0.gguf (重排模型)
+# Embedding runs on the GPU (port 8025, EmbeddingGemma-300M) because the NPU
+# (8030) is a SINGLE-model server and translation (hy-mt2:1.8b) holds it.
+# The whole vector index was re-embedded with this GPU build on 2026-10-03:
+# the NPU build `embed-gemma:300m` produces a DIFFERENT vector space (measured
+# cosine median 0.008 against this one), so the two must never be mixed.
+# Reranker (8024) and query-expansion (8026) remain GPU-WebUI workers.
+# Docker containers access via host.docker.internal
 models:
-  # Embedding: EmbeddingGemma-300M via local llama-server (CPU)
-  embedding_model_url: "http://127.0.0.1:2780/v1"
-  embedding_model_name: "embeddinggemma-300M-Q8_0.gguf"
+  # Embedding via GPU-WebUI worker (port 8025, model embeddinggemma-300M-Q8_0)
+  embedding_model_url: "http://127.0.0.1:8025/v1"
+  embedding_model_name: "embeddinggemma-300M-Q8_0"
   embedding_dim: 768
   
-  # Reranker: Qwen3-Reranker-0.6B via local llama-server (CPU)
-  reranker_model_url: "http://127.0.0.1:2781/v1"
-  reranker_model_name: "qwen3-reranker-0.6b-q8_0.gguf"
+  # Reranker via GPU-WebUI worker (port 8024)
+  reranker_model_url: "http://127.0.0.1:8024/v1"
+  reranker_model_name: "Qwen.Qwen3-Reranker-0.6B.Q8_0.gguf"
   
-  # Query Expansion: QMD Query Expansion (local GGUF)
-  query_expansion_model: "E:/QMD-Index/models/qmd-query-expansion-1.7B-q4_k_m.gguf"
+  # Query Expansion via GPU-WebUI worker (port 8026)
+  query_expansion_model_url: "http://127.0.0.1:8026/v1"
+  query_expansion_model_name: "hf_tobil_qmd-query-expansion-1.7B-q4_k_m.gguf"
 
 # Search defaults
 defaults:

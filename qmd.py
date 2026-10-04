@@ -7,8 +7,8 @@ Local semantic search using @tobilu/qmd's existing SQLite index + llama.cpp Dock
 Features:
   - Search across all indexed collections (1888+ docs, 15 collections)
   - BM25 keyword search via FTS5 (zero latency)
-  - Semantic search via Docker embedding API (port 2980)
-  - Rerank via Docker reranker API (port 2981)
+  - Semantic search via the embedding API resolved from qmd.yml
+  - Rerank via the reranker API resolved from qmd.yml
   - Cross-platform path resolution (Windows/macOS/Linux)
 
 Usage:
@@ -21,13 +21,14 @@ Usage:
 
 Config: ./qmd.yml
 Index:  auto-detected models/qmd/index.sqlite
-Embed:  http://host.docker.internal:2980/v1/embeddings
-Rerank: http://host.docker.internal:2981/v1/rerank
+Embed:  resolved from qmd.yml models.embedding_model_url (default http://127.0.0.1:8030/v1/embeddings)
+Rerank: resolved from qmd.yml models.reranker_model_url (default http://127.0.0.1:8024/v1/rerank)
 """
 
 import sys
 import os
 import json
+import re
 import sqlite3
 import argparse
 import hashlib
@@ -94,14 +95,60 @@ def _resolve_index_path() -> str:
     return candidates[0] if candidates else "index.sqlite"
 
 
+def _load_config():
+    """Load configuration from qmd.yml, env vars, then defaults."""
+    cfg = {}
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    yml_path = os.path.join(script_dir, "qmd.yml")
+    try:
+        import yaml
+        if os.path.exists(yml_path):
+            with open(yml_path, "r", encoding="utf-8") as f:
+                yml_cfg = yaml.safe_load(f) or {}
+            models = yml_cfg.get("models", {})
+            if models.get("embedding_model_url"):
+                base = models["embedding_model_url"].rstrip("/")
+                cfg["embedding_url"] = base + "/embeddings"
+                cfg["embedding_model"] = models.get("embedding_model_name", "embed-gemma:300m")
+                cfg["embedding_dim"] = models.get("embedding_dim", 768)
+            if models.get("reranker_model_url"):
+                base = models["reranker_model_url"].rstrip("/")
+                cfg["reranker_url"] = base + "/rerank"
+                cfg["reranker_model"] = models.get("reranker_model_name", "qwen3-reranker-0.6b-q8_0.gguf")
+            if models.get("query_expansion_model_url"):
+                # qmd.yml names these keys ..._url / ..._name; the loader used to
+                # look for "query_expansion_model", so the YAML value was never
+                # read and the dead 2782 default won silently.
+                base = models["query_expansion_model_url"].rstrip("/")
+                cfg["query_expansion_url"] = base + "/completions"
+                cfg["query_expansion_model"] = models.get(
+                    "query_expansion_model_name",
+                    "hf_tobil_qmd-query-expansion-1.7B-q4_k_m.gguf",
+                )
+    except ImportError:
+        pass
+    except Exception:
+        pass
+    return cfg
+
+
+_CONFIG = _load_config()
+
 INDEX_PATH = _resolve_index_path()
-EMBEDDING_MODEL = "Qwen3-Embedding-0.6B-f16.gguf"
-EMBEDDING_DIM = 768    # embeddinggemma-300M outputs 768-dim vectors
-EMBEDDING_URL = os.environ.get("QMD_EMBEDDING_URL", "http://127.0.0.1:2980/v1/embeddings")
-RERANKER_URL = os.environ.get("QMD_RERANKER_URL", "http://127.0.0.1:2981/v1/rerank")
-QUERY_EXPANSION_URL = os.environ.get("QMD_QUERY_EXPANSION_URL", "http://127.0.0.1:2782/v1/completions")
+EMBEDDING_MODEL = _CONFIG.get("embedding_model", "embed-gemma:300m")
+EMBEDDING_DIM = _CONFIG.get("embedding_dim", 768)
+# Defaults must point at live ports: 1278 / 1245 / 2782 are dead on this machine.
+EMBEDDING_URL = os.environ.get("QMD_EMBEDDING_URL",
+    _CONFIG.get("embedding_url", "http://127.0.0.1:8030/v1/embeddings"))
+RERANKER_URL = os.environ.get("QMD_RERANKER_URL",
+    _CONFIG.get("reranker_url", "http://127.0.0.1:8024/v1/rerank"))
+QUERY_EXPANSION_URL = os.environ.get("QMD_QUERY_EXPANSION_URL",
+    _CONFIG.get("query_expansion_url", "http://127.0.0.1:8026/v1/completions"))
 
 DEFAULT_LIMIT = 10
+# FTS5 with unicode61 tokenizer on CJK text has practical limits
+# Keep chunks at 9,000 chars to avoid token/position overflow
+FTS_CHUNK_SIZE = 9000
 
 
 # ==================== Database Layer ====================
@@ -174,7 +221,7 @@ class QMDDB:
             return None
         d = dict(row)
         try:
-            cr = self.conn.execute("SELECT content FROM content WHERE doc=?", (d["hash"],)).fetchone()
+            cr = self.conn.execute("SELECT doc FROM content WHERE hash=?", (d["hash"],)).fetchone()
             if cr:
                 d["content"] = str(cr[0])
         except Exception:
@@ -187,65 +234,171 @@ class QMDDB:
             d["vector_count"] = 0
         return d
 
-    def bm25_search(self, query: str, collection=None, limit=20) -> List[Dict]:
+    @staticmethod
+    def _has_cjk(text):
+        return bool(re.search(r'[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]', text))
+
+    @staticmethod
+    def _build_cjk_queries(query):
+        """Generate multiple FTS5 query variants for CJK text."""
+        cleaned = re.sub(r'\s+', '', query) if QMDDB._has_cjk(query) else query.strip()
+        queries = [f'"{cleaned}"']
+
+        # Individual characters AND
+        chars = re.findall(r'[\u4e00-\u9fff\u3400-\u4dbf]', cleaned)
+        if len(chars) > 1:
+            queries.append(' AND '.join(chars))
+            # Character bigrams
+            bigrams = [f'"{chars[i]}{chars[i+1]}"' for i in range(len(chars) - 1)]
+            queries.append(' OR '.join(bigrams))
+
+        # jieba word segmentation
+        try:
+            import jieba
+            words = [w.strip() for w in jieba.lcut(cleaned, cut_all=False)
+                     if w.strip() and QMDDB._has_cjk(w)]
+            if len(words) > 1:
+                queries.append(' AND '.join(f'"{w}"' for w in words))
+                queries.append(' OR '.join(f'"{w}"' for w in words))
+        except ImportError:
+            pass
+
+        return queries
+
+    def _run_fts_query(self, fts_q, collection, limit):
         cur = self.conn.cursor()
         tables = [r[0] for r in cur.execute(
             "SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
         fts_table = next((t for t in tables if t == "documents_fts"), None)
         if not fts_table:
-            return []
+            return None, None
 
+        has_chunks = "fts_chunks" in tables
         where = f"{fts_table} MATCH ?"
-        params = [f'"{query}"']
+        params = [fts_q]
         if collection:
             coll_docs = cur.execute(
                 "SELECT id FROM documents WHERE collection=?", (collection,)).fetchall()
             if not coll_docs:
-                return []
+                return [], []
             ids = tuple(x[0] for x in coll_docs)
             where += f" AND rowid IN {ids}"
 
-        rows = cur.execute(
-            f"SELECT rowid FROM [{fts_table}] WHERE {where} LIMIT ?;",
-            params + [limit * 2]).fetchall()
-        if not rows:
-            return []
+        try:
+            if has_chunks:
+                # Join through fts_chunks to resolve chunk rowids to document IDs
+                rows = cur.execute(
+                    f"""SELECT c.doc_id FROM [{fts_table}] f
+                        JOIN fts_chunks c ON c.fts_rowid = f.rowid
+                        WHERE {where} GROUP BY c.doc_id LIMIT ?;""",
+                    params + [limit * 2]).fetchall()
+                # Also include rows whose rowid IS a doc_id (non-chunked docs)
+                non_chunk_rows = cur.execute(
+                    f"""SELECT f.rowid FROM [{fts_table}] f
+                        WHERE {where}
+                        AND f.rowid NOT IN (SELECT fts_rowid FROM fts_chunks)
+                        LIMIT ?;""",
+                    params + [limit * 2]).fetchall()
+                rows = list(set(rows + non_chunk_rows))
+            else:
+                rows = cur.execute(
+                    f"SELECT rowid FROM [{fts_table}] WHERE {where} LIMIT ?;",
+                    params + [limit * 2]).fetchall()
+        except Exception:
+            return None, None
+        return rows, fts_table
 
+    def _like_search(self, query: str, collection=None, limit=20) -> List[Dict]:
+        """Fallback LIKE-based search for CJK when FTS5 returns no results."""
+        cur = self.conn.cursor()
+        like_q = f'%{query}%'
+        if collection:
+            rows = cur.execute(
+                "SELECT d.id FROM documents d JOIN content c ON c.hash = d.hash "
+                "WHERE d.active=1 AND d.collection=? AND c.doc LIKE ? LIMIT ?",
+                (collection, like_q, limit)).fetchall()
+        else:
+            rows = cur.execute(
+                "SELECT d.id FROM documents d JOIN content c ON c.hash = d.hash "
+                "WHERE d.active=1 AND c.doc LIKE ? LIMIT ?",
+                (like_q, limit)).fetchall()
         results = []
-        for (doc_id,) in rows[:limit]:
+        for (doc_id,) in rows:
             doc = self.get_document_by_id(int(doc_id))
             if doc:
-                # Use BM25 rank from FTS if available, otherwise default
-                score = 0.9 - 0.1 * len(results)  # simple descending score
                 results.append({
                     "id": doc["id"], "collection": doc["collection"],
                     "path": doc["path"],
                     "title": doc.get("title", os.path.basename(doc["path"])),
-                    "score": round(score, 4),
+                    "score": 0.5,
                     "content": doc.get("content", ""),
                 })
+        return results
+
+    def bm25_search(self, query: str, collection=None, limit=20) -> List[Dict]:
+        # Collect FTS5 query candidates
+        fts_queries = [f'"{query}"']
+        if self._has_cjk(query):
+            fts_queries = self._build_cjk_queries(query)
+
+        seen_ids = set()
+        results = []
+        for fts_q in fts_queries:
+            if len(results) >= limit:
+                break
+            rows, _ = self._run_fts_query(fts_q, collection, limit)
+            if not rows:
+                continue
+            for (doc_id,) in rows:
+                if doc_id in seen_ids or len(results) >= limit:
+                    continue
+                seen_ids.add(doc_id)
+                doc = self.get_document_by_id(int(doc_id))
+                if doc:
+                    score = 0.9 - 0.1 * len(results)
+                    results.append({
+                        "id": doc["id"], "collection": doc["collection"],
+                        "path": doc["path"],
+                        "title": doc.get("title", os.path.basename(doc["path"])),
+                        "score": round(score, 4),
+                        "content": doc.get("content", ""),
+                    })
+
+        # CJK fallback: if FTS5 returns nothing, try LIKE (catches embedded tokens)
+        if not results and self._has_cjk(query):
+            results = self._like_search(query, collection, limit)
+
         return results[:limit]
 
 
 # ==================== API Helpers ====================
 
 def get_embedding(text: str):
-    """Get embedding via Docker llama.cpp (port 1278)."""
+    """Get an embedding vector from EMBEDDING_URL.
+
+    Returns None when the endpoint answers 200 with a JSON `null` body, which
+    is how a FastFlowLM NPU replies when the requested model is not the one it
+    currently serves. Naming the URL matters: the caller's failure then points
+    at the real endpoint instead of a port nobody listens on.
+    """
     try:
         import requests as req
         r = req.post(EMBEDDING_URL, json={
             "model": EMBEDDING_MODEL, "input": text, "encoding_format": "float"}, timeout=30)
         if r.status_code == 200:
             d = r.json()
-            if d.get("data"):
+            if d and d.get("data"):
                 return d["data"][0]["embedding"]
+            print(f"Warning: Embedding API ({EMBEDDING_URL}) returned no vector; "
+                  f"is model {EMBEDDING_MODEL!r} the one the server currently serves?",
+                  file=sys.stderr)
     except Exception as e:
-            print(f"Warning: Embedding API (2980): {e}", file=sys.stderr)
+        print(f"Warning: Embedding API ({EMBEDDING_URL}): {e}", file=sys.stderr)
     return None
 
 
 def get_rerank(query, documents):
-    """Rerank docs via Docker llama.cpp (port 1245)."""
+    """Rerank candidate documents through RERANKER_URL."""
     try:
         import requests as req
         # Qwen3-Reranker needs full model name and specific format
@@ -270,25 +423,63 @@ def get_rerank(query, documents):
                     })
                 return sorted(ranked, key=lambda x: -x["relevance_score"])
     except Exception as e:
-            print(f"Warning: Reranker API (2981): {e}", file=sys.stderr)
+        print(f"Warning: Reranker API ({RERANKER_URL}): {e}", file=sys.stderr)
     return None
 
 
 def check_api_ready() -> bool:
-    """Check if Docker llama.cpp APIs are reachable."""
+    """True only when the embedding endpoint returns an actual vector.
+
+    A status-code check is not enough: a FastFlowLM NPU answers HTTP 200 with a
+    JSON `null` body for a model it is not currently serving, so 200 alone
+    cannot distinguish a working embedding endpoint from an idle one.
+    """
     try:
         import requests as req
-        r = req.post(EMBEDDING_URL, json={"model": "test", "input": ["x"]}, timeout=3)
-        return r.status_code == 200
+        r = req.post(EMBEDDING_URL,
+                     json={"model": EMBEDDING_MODEL, "input": "ready"},
+                     timeout=10)
+        if r.status_code != 200:
+            return False
+        body = r.json()
+        return bool(body and body.get("data") and body["data"][0].get("embedding"))
     except Exception:
         return False
 
 
+_qe_available = None
+
+def _check_qe_alive():
+    """Quick TCP check — returns True if QE port is accepting connections."""
+    global _qe_available
+    if _qe_available is not None:
+        return _qe_available
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(QUERY_EXPANSION_URL)
+        host = parsed.hostname or '127.0.0.1'
+        if parsed.port is None:
+            _qe_available = False
+            return _qe_available
+        port = parsed.port
+        import socket
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(2)
+        result = s.connect_ex((host, port))
+        s.close()
+        _qe_available = (result == 0)
+    except Exception:
+        _qe_available = False
+    return _qe_available
+
 def get_query_expansions(query: str, max_count: int = 2) -> list:
     """Expand a query using the qmd-query-expansion model (completion endpoint).
 
-    Returns a list of expanded query strings, or empty list on failure.
+    Returns a list of expanded query strings, or empty list if QE unavailable/failure.
+    Falls back silently — no warnings printed.
     """
+    if not _check_qe_alive():
+        return []
     try:
         import requests as req
         r = req.post(QUERY_EXPANSION_URL, json={
@@ -310,59 +501,153 @@ def get_query_expansions(query: str, max_count: int = 2) -> list:
                         if len(expansions) >= max_count:
                             break
                 return expansions
-    except Exception as e:
-        print(f"Warning: Query expansion API: {e}", file=sys.stderr)
+    except Exception:
+        pass
     return []
 
 
 # ==================== Semantic Search ====================
 
-def semantic_search(db, query, limit=10, collection=None):
-    """BM25 pre-filter + embedding rerank."""
-    bm25 = db.bm25_search(query, collection=collection, limit=limit * 3)
-    if not bm25:
+# vec0 ANN index. Same extension the WebUI's /api/search/vector loads.
+VEC0_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         "node_modules", "sqlite-vec-windows-x64", "vec0.dll")
+
+# Cosine similarity for candidates that only BM25 surfaced. Kept below any real
+# vector hit so an exact-term match still ranks, without outranking similarity.
+BM25_CANDIDATE_FLOOR = 0.25
+
+
+def _ensure_vec0(conn) -> bool:
+    """Make the vec0 ANN table queryable on this connection.
+
+    Verifies by querying rather than by tracking a flag, so "already loaded"
+    and "just loaded" both report success.
+    """
+    try:
+        conn.execute("SELECT 1 FROM vectors_vec LIMIT 1")
+        return True
+    except sqlite3.Error:
+        pass
+    if not os.path.exists(VEC0_PATH):
+        print(f"Warning: vec0 extension missing at {VEC0_PATH}; "
+              f"semantic search cannot rank by similarity.", file=sys.stderr)
+        return False
+    try:
+        conn.enable_load_extension(True)
+        conn.load_extension(VEC0_PATH)
+    except sqlite3.Error as exc:
+        print(f"Warning: could not load vec0 ({exc}); "
+              f"semantic search cannot rank by similarity.", file=sys.stderr)
+        return False
+    return True
+
+
+def _vector_candidates(db, qvec, limit, collection=None):
+    """Nearest chunks by cosine distance, collapsed to one row per document.
+
+    Returns [(document_dict, similarity)] ordered by descending similarity,
+    where similarity = 1 - cosine_distance for the document's best chunk.
+    """
+    if not qvec or not _ensure_vec0(db.conn):
         return []
+
+    import struct
+    blob = struct.pack(f"{len(qvec)}f", *qvec)
+    try:
+        rows = db.conn.execute(
+            "SELECT hash_seq, distance FROM vectors_vec "
+            "WHERE embedding MATCH ? AND k=? ORDER BY distance ASC",
+            (blob, max(limit * 5, 25)),
+        ).fetchall()
+    except sqlite3.Error as exc:
+        print(f"Warning: vec0 query failed ({exc}).", file=sys.stderr)
+        return []
+
+    # One row per document: its most similar chunk decides its score.
+    best = {}
+    for hash_seq, distance in rows:
+        doc_hash, _, _seq = str(hash_seq).rpartition("_")
+        if not doc_hash:
+            continue
+        similarity = 1.0 - float(distance)
+        if doc_hash not in best or similarity > best[doc_hash]:
+            best[doc_hash] = similarity
+
+    hits = []
+    for doc_hash, similarity in best.items():
+        row = db.conn.execute(
+            "SELECT * FROM documents WHERE hash=? AND active=1 LIMIT 1", (doc_hash,)
+        ).fetchone()
+        if not row:
+            continue
+        doc = dict(row)
+        if collection and doc.get("collection") != collection:
+            continue
+        content_row = db.conn.execute(
+            "SELECT doc FROM content WHERE hash=?", (doc_hash,)).fetchone()
+        doc["content"] = str(content_row[0]) if content_row else ""
+        doc["title"] = doc.get("title") or os.path.basename(doc.get("path", ""))
+        hits.append((doc, similarity))
+
+    hits.sort(key=lambda pair: -pair[1])
+    return hits[:limit]
+
+
+def semantic_search(db, query, limit=10, collection=None):
+    """Vector retrieval fused with a BM25 pre-filter.
+
+    Returns ``(results, mode)`` where mode is ``"semantic"`` when the ranking
+    really used embeddings, or ``"bm25"`` when it had to fall back.
+
+    Callers MUST label their output from ``mode``. The previous implementation
+    embedded the query, never compared it to anything, and returned BM25 order
+    under a "Semantic" heading — a silent mislabel that made a broken embedding
+    endpoint look like working semantic search.
+    """
+    bm25 = db.bm25_search(query, collection=collection, limit=limit * 3)
 
     print("Generating embedding...", file=sys.stderr)
     qvec = get_embedding(query)
     if not qvec:
-        print("No ML available, using BM25 only.", file=sys.stderr)
-        return bm25[:limit]
+        print("No embedding available - falling back to BM25 keyword results.",
+              file=sys.stderr)
+        return bm25[:limit], "bm25"
 
-    candidates = []
-    seen_ids = set()
-    for doc in bm25[:limit * 2]:
-        did = doc["id"]
-        if did in seen_ids:
-            continue
-        seen_ids.add(did)
+    vector_hits = _vector_candidates(db, qvec, limit, collection=collection)
+    if not vector_hits:
+        print("No vector candidates - falling back to BM25 keyword results.",
+              file=sys.stderr)
+        return bm25[:limit], "bm25"
 
-        # Compute cosine similarity with BM25 score as initial fallback
-        sim = doc["score"]
+    # Fuse. Vector hits carry real similarity; BM25-only candidates enter on a
+    # floor so exact-term recall survives without displacing similarity order.
+    fused = {}
+    for doc, similarity in vector_hits:
+        fused[doc["id"]] = {**doc, "similarity": round(similarity, 4)}
+    for doc in bm25:
+        if doc["id"] not in fused:
+            fused[doc["id"]] = {**doc, "similarity": BM25_CANDIDATE_FLOOR}
 
-        candidates.append({**doc, "similarity": round(sim, 4)})
+    candidates = sorted(fused.values(), key=lambda d: -d["similarity"])
+    candidates = candidates[: max(limit * 2, DEFAULT_LIMIT)]
 
-    if not candidates:
-        return bm25[:limit]
-
-    # Rerank via Docker reranker API for better quality
+    # Reranker refines the fused order using real chunk text, not just the path.
     print("Reranking...", file=sys.stderr)
-    docs_text = [c["title"] + " " + c.get("path", "")[:100] for c in candidates]
+    docs_text = [(c.get("content") or c.get("title") or "")[:1200] for c in candidates]
     ranked = get_rerank(query, docs_text)
 
     if ranked:
-        idx_to_doc = {i: c for i, c in enumerate(candidates)}
-        reranked_results = []
+        reranked = []
         for r in ranked[:limit]:
-            orig_idx = r["index"]
-            if orig_idx < len(idx_to_doc):
-                doc = idx_to_doc[orig_idx].copy()
+            idx = r.get("index")
+            if isinstance(idx, int) and 0 <= idx < len(candidates):
+                doc = candidates[idx].copy()
                 doc["similarity"] = round(r.get("relevance_score", 0), 4)
-                reranked_results.append(doc)
-        return reranked_results
+                reranked.append(doc)
+        if reranked:
+            return reranked, "semantic"
 
-    candidates.sort(key=lambda x: -x["similarity"])
-    return candidates[:limit]
+    return candidates[:limit], "semantic"
 
 
 # ==================== CLI Commands ====================
@@ -389,20 +674,6 @@ def cmd_search(db, query, limit=10, collection=None, use_semantic=False, use_exp
         print("Error: Empty query.", file=sys.stderr)
         return
 
-    api_ready = check_api_ready()
-    mode_parts = []
-    if use_expand:
-        mode_parts.append("Expanded")
-    mode_parts.append("Semantic" if (use_semantic and api_ready) else "BM25 keyword")
-    mode = "+".join(mode_parts)
-
-    print(f"\n{'='*70}")
-    print(f"  Searching: \"{query}\"")
-    if collection:
-        print(f"  Collection: {collection}")
-    print(f"  Mode: {mode}")
-    print(f"{'='*70}\n", file=sys.stderr)
-
     # Generate expanded queries if requested
     queries_to_run = [query]
     if use_expand:
@@ -411,19 +682,43 @@ def cmd_search(db, query, limit=10, collection=None, use_semantic=False, use_exp
             print(f"  Query expansions: {expanded}", file=sys.stderr)
             queries_to_run.extend(expanded)
 
-    # Run search for each query variant
+    # Run search for each query variant. The mode reported below is derived from
+    # what each call actually did, not from what was requested: semantic_search
+    # returns "bm25" when embeddings were unavailable.
+    api_ready = check_api_ready()
     merged = {}
+    modes_seen = set()
     for q in queries_to_run:
         if use_semantic and api_ready:
-            batch = semantic_search(db, q, limit=limit, collection=collection)
+            batch, batch_mode = semantic_search(db, q, limit=limit, collection=collection)
+            modes_seen.add(batch_mode)
         else:
             batch = db.bm25_search(q, collection=collection, limit=limit * 2)
+            modes_seen.add("bm25")
 
         for doc in batch:
             did = doc["id"]
             score = doc.get("similarity", doc.get("score", 0))
             if did not in merged or score > merged[did].get("similarity", merged[did].get("score", 0)):
                 merged[did] = doc
+
+    mode_parts = []
+    if use_expand:
+        mode_parts.append("Expanded")
+    if modes_seen == {"semantic"}:
+        mode_parts.append("Semantic")
+    elif modes_seen == {"semantic", "bm25"}:
+        mode_parts.append("Semantic (BM25 fallback for some variants)")
+    else:
+        mode_parts.append("BM25 keyword")
+    mode = "+".join(mode_parts)
+
+    print(f"\n{'='*70}")
+    print(f"  Searching: \"{query}\"")
+    if collection:
+        print(f"  Collection: {collection}")
+    print(f"  Mode: {mode}")
+    print(f"{'='*70}\n", file=sys.stderr)
 
     results = sorted(merged.values(), key=lambda x: -x.get("similarity", x.get("score", 0)))[:limit]
 
@@ -494,14 +789,95 @@ def cmd_stats(db):
     print(f"Content entries: {total_content}")
     print(f"Vector chunks: {total_vectors}")
     print(f"\nAPIs:")
-    print(f"  Embedding (port 2980): {'OK' if api_ready else 'DOWN'}")
-    print(f"  Reranker (port 2981):  {'OK' if api_ready else 'check manually'}")
+    emb_port = EMBEDDING_URL.rsplit(':', 1)[-1].split('/')[0] if ':' in EMBEDDING_URL else '?'
+    rer_port = RERANKER_URL.rsplit(':', 1)[-1].split('/')[0] if ':' in RERANKER_URL else '?'
+    print(f"  Embedding (port {emb_port}): {'OK' if api_ready else 'DOWN'}")
+    print(f"  Reranker (port {rer_port}):  {'OK' if api_ready else 'check manually'}")
+    qe_port = QUERY_EXPANSION_URL.rsplit(':', 1)[-1].split('/')[0] if ':' in QUERY_EXPANSION_URL else '?'
+    print(f"  Query Expansion (port {qe_port}): OPTIONAL (fallback if DOWN)")
 
     cols = db.get_collections()
     if cols:
         print(f"\nCollections ({len(cols)}):")
         for c in cols:
             print(f"  {c['name']}: {c['docs']} docs")
+
+
+def _insert_fts_chunks(cur, doc_id, filepath, title, content, chunk_size=FTS_CHUNK_SIZE):
+    """Insert content into FTS5 with automatic chunking for long docs."""
+    body = content[:50000]
+    if len(content) > chunk_size:
+        # Split at paragraph boundaries near chunk_size
+        chunks = []
+        pos = 0
+        while pos < len(body):
+            end = min(pos + chunk_size, len(body))
+            if end < len(body):
+                # Try finding paragraph break first
+                para_break = body.rfind('\n\n', pos, end)
+                if para_break > pos + chunk_size // 2:
+                    end = para_break
+                else:
+                    # Try sentence-ending punctuation
+                    sentence_break = -1
+                    for sep in ('\n\n', '. ', '！', '。', '？', '\n'):
+                        idx = body.rfind(sep, pos, end)
+                        if idx > sentence_break:
+                            sentence_break = idx
+                    if sentence_break > pos + chunk_size // 2:
+                        end = sentence_break + 1
+            chunk_text = body[pos:end].strip()
+            if chunk_text:
+                chunks.append(chunk_text)
+            new_pos = end
+            while new_pos < len(body) and body[new_pos] in ('\n', ' ', '\r'):
+                new_pos += 1
+            if new_pos == end:
+                new_pos += 1
+            pos = new_pos
+
+        # Get base rowid offset
+        try:
+            max_fts = cur.execute("SELECT MAX(rowid) FROM documents_fts").fetchone()[0] or 0
+        except Exception:
+            max_fts = 0
+        fts_rowid = max(max_fts, cur.execute("SELECT MAX(id) FROM documents").fetchone()[0] or 0) + 1
+
+        # Ensure chunks table exists for mapping
+        cur.execute("""CREATE TABLE IF NOT EXISTS fts_chunks (
+            fts_rowid INTEGER PRIMARY KEY, doc_id INTEGER NOT NULL, seq INTEGER NOT NULL)""")
+
+        # Delete old chunks and the old single-row FTS entry for this doc
+        cur.execute("DELETE FROM fts_chunks WHERE doc_id=?", (doc_id,))
+        try:
+            cur.execute("DELETE FROM documents_fts WHERE rowid=?", (doc_id,))
+        except Exception:
+            pass
+        for seq, chunk_text in enumerate(chunks):
+            try:
+                cur.execute(
+                    "INSERT OR REPLACE INTO documents_fts (rowid, filepath, title, body) VALUES (?, ?, ?, ?)",
+                    (fts_rowid, filepath, title + (f" [{seq}]" if seq > 0 else ""), chunk_text))
+                cur.execute(
+                    "INSERT OR REPLACE INTO fts_chunks (fts_rowid, doc_id, seq) VALUES (?, ?, ?)",
+                    (fts_rowid, doc_id, seq))
+                fts_rowid += 1
+            except Exception as e:
+                print(f"  [WARN] FTS chunk {seq} failed for {filepath}: {e}", file=sys.stderr)
+
+        if len(chunks) > 1:
+            print(f"  [INFO] Split {filepath} into {len(chunks)} FTS5 chunks ({len(content)} chars)", file=sys.stderr)
+    else:
+        try:
+            cur.execute(
+                "INSERT OR REPLACE INTO documents_fts (rowid, filepath, title, body) VALUES (?, ?, ?, ?)",
+                (doc_id, filepath, title, body))
+        except Exception as e:
+            print(f"  [WARN] FTS insert failed for {filepath}: {e}", file=sys.stderr)
+
+    # Also try to insert full content into content_fts for semantic fallback
+    if len(content) > 50000:
+        print(f"  [WARN] Content truncated at 50000 chars for {filepath} ({len(content)} total)", file=sys.stderr)
 
 
 def cmd_add(db, file_path: str, collection=None, recursive=False):
@@ -606,13 +982,8 @@ def cmd_add(db, file_path: str, collection=None, recursive=False):
             except Exception:
                 pass
 
-            # Update FTS (rowid = id for documents_fts)
-            try:
-                cur.execute(f"INSERT OR REPLACE INTO documents_fts (rowid, filepath, title, body) VALUES (?, ?, ?, ?)",
-                           (doc_id, rel_path, title, content[:50000]))  # Cap FTS body size
-            except Exception as e:
-                print(f"  [WARN] FTS update failed for {rel_path}: {e}", file=sys.stderr)
-
+            # Update FTS (split long docs into multiple rows)
+            _insert_fts_chunks(cur, doc_id, rel_path, title, content)
             updated += 1
         else:
             # Insert new document
@@ -629,13 +1000,8 @@ def cmd_add(db, file_path: str, collection=None, recursive=False):
             except Exception as e:
                 print(f"  [WARN] Content insert failed for {rel_path}: {e}", file=sys.stderr)
 
-            # Insert into FTS5 — use INSERT OR REPLACE to handle conflicts with orphaned entries
-            try:
-                cur.execute(f"INSERT OR REPLACE INTO documents_fts (rowid, filepath, title, body) VALUES (?, ?, ?, ?)",
-                           (next_id, rel_path, title, content[:50000]))
-            except Exception as e:
-                print(f"  [WARN] FTS insert failed for {rel_path}: {e}", file=sys.stderr)
-
+            # Insert into FTS5 — split long docs into multiple rows
+            _insert_fts_chunks(cur, next_id, rel_path, title, content)
             added += 1
             next_id += 1
 
@@ -802,20 +1168,27 @@ def cmd_update(db, collection=None):
                         except Exception:
                             pass
 
-                        # Update FTS
-                        try:
-                            body = content[:50000]
-                            cur.execute(f"""
-                                INSERT OR REPLACE INTO documents_fts (rowid, filepath, title, body)
-                                VALUES (?, ?, ?, ?)
-                            """, (old_id, rel_path, title, body))
-                        except Exception as e:
-                            print(f"    [WARN] FTS update failed: {e}", file=sys.stderr)
+                        # Update FTS (split long docs into chunks)
+                        _insert_fts_chunks(cur, old_id, rel_path, title, content)
 
                         total_updated += 1
                 else:
-                    # New file -- not yet indexed
-                    pass
+                    # New file -- add it to the index
+                    now_new = datetime.now().isoformat() + "Z"
+                    file_hash = hashlib.sha256(content.encode('utf-8')).hexdigest()
+                    max_id = cur.execute("SELECT MAX(id) FROM documents").fetchone()[0] or 0
+                    new_id = max_id + 1
+                    cur.execute("""
+                        INSERT INTO documents (id, collection, path, title, hash, created_at, modified_at, active)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+                    """, (new_id, coll_name, rel_path, title, file_hash, now_new, now_new))
+                    try:
+                        cur.execute("INSERT INTO content (hash, doc, created_at) VALUES (?, ?, ?)",
+                                    (file_hash, content, now_new))
+                    except Exception:
+                        pass
+                    _insert_fts_chunks(cur, new_id, rel_path, title, content)
+                    total_added += 1
 
         # Check for removed files (in DB but not on disk)
         for path, doc_info in existing_map.items():
@@ -851,9 +1224,25 @@ def cmd_optimize(db, full=False):
     print(f"  Optimizing Index")
     print(f"{'='*70}\n")
 
-    # ---- Step 1: Remove orphaned FTS rowids ----
-    # Orphaned = rowid exists in documents_fts but NOT in documents table
+    # ---- Step 1: Check for fts_chunks table ----
+    has_chunks = "fts_chunks" in [r[0] for r in cur.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+
+    # Remove orphaned FTS rowids (including chunk entries)
     try:
+        if has_chunks:
+            # Clean orphaned fts_chunks first
+            chunk_orphans = cur.execute("""
+                SELECT COUNT(*) FROM fts_chunks
+                WHERE doc_id NOT IN (SELECT id FROM documents)
+            """).fetchone()[0]
+            if chunk_orphans > 0:
+                cur.execute("""
+                    DELETE FROM fts_chunks
+                    WHERE doc_id NOT IN (SELECT id FROM documents)
+                """)
+                print(f"  Removed {chunk_orphans} orphaned FTS chunk mappings.")
+
         fts_orphans = cur.execute("""
             SELECT COUNT(*) FROM documents_fts
             WHERE rowid NOT IN (SELECT id FROM documents)
@@ -1150,15 +1539,8 @@ def cmd_import(db, base_dir: str, collection_prefix=None):
                 except Exception:
                     pass
 
-                # Insert FTS
-                try:
-                    body = doc['content'][:50000]
-                    cur.execute(f"""
-                        INSERT OR REPLACE INTO documents_fts (rowid, filepath, title, body)
-                        VALUES (?, ?, ?, ?)
-                    """, (next_id, doc['path'], title, body))
-                except Exception as e:
-                    print(f"    [WARN] FTS insert failed for {title}: {e}", file=sys.stderr)
+                # Insert FTS (split long docs into chunks)
+                _insert_fts_chunks(cur, next_id, doc['path'], title, doc['content'])
 
                 total_added += 1
                 next_id += 1

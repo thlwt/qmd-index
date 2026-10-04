@@ -1,22 +1,12 @@
 services:
-  qmd-webui:
-    build: .
-    container_name: qmd-webui
-    restart: unless-stopped
-    ports:
-      - "8090:8090"
-    volumes:
-      # Persist index database + vector data
-      - ./models:/app/models
-      # Keep settings editable without rebuild
-      - ./webui/settings.json:/app/webui/settings.json
-    environment:
-      - PYTHONUNBUFFERED=1
-      # Override LLM URL for Docker (host.docker.internal = host machine)
-      - LLM_URL=http://host.docker.internal:5000/v1
-    extra_hosts:
-      # Allow container to reach host services (LM Studio, embedding, reranker)
-      - "host.docker.internal:host-gateway"
+  # qmd-webui (8090) is deliberately NOT a compose service. Port 8090 is owned
+  # by the host-native server (`python D:\QMD-Index\webui\server.py --port 8090`,
+  # started via webui\start_server.ps1): /api/search/vector needs sqlite-vec's
+  # Windows vec0 DLL, which the Linux container cannot load, and a bind-mounted
+  # 285 MB SQLite DB on a Docker Desktop 9p mount fails every statement with
+  # "disk I/O error" while a -wal file is present. Declaring the container here
+  # made `docker compose up` resurrect it, and it silently stole the IPv6 half
+  # of port 8090 from the native server.
 
   qmd-mcp:
     build: .
@@ -26,10 +16,60 @@ services:
       - "8010:8010"
     volumes:
       - ./models:/app/models
+      - C:/Users/user/Documents/Obsidian Vault/QMD-Knowledge:/obsidian/general-knowledge:ro
+      - C:/Users/user/AppData/Local/hermes/obsidian-vaults/su-family-farm:/obsidian/su-family-farm:ro
+      - D:/景观与高尔夫规划设计施工/努山塔拉高爾夫造鎮計畫:/obsidian/nusantara-township:ro
     environment:
       - PYTHONUNBUFFERED=1
-      - EMBEDDING_URL=http://host.docker.internal:2780/v1/embeddings
+      - EMBEDDING_URL=http://host.docker.internal:8030/v1/embeddings
       - QMD_DB_PATH=/app/models/qmd/index.sqlite
+      - QMD_API_BASE=http://host.docker.internal:8090
+      - RAGFLOW_API_BASE=http://host.docker.internal:9393
+      - RAGFLOW_API_KEY=${RAGFLOW_API_KEY}
+      - TRANSLATE_URL=http://host.docker.internal:8030/v1
+      - LLM_API_BASE=http://host.docker.internal:1235/v1
     extra_hosts:
       - "host.docker.internal:host-gateway"
     command: ["python", "qmd_mcp_server.py", "--transport", "sse", "--port", "8010"]
+
+  qmd-wiki-hermes:
+    build:
+      context: D:/QMD-Wiki-Hermes
+      dockerfile: Dockerfile
+    container_name: qmd-wiki-hermes
+    restart: unless-stopped
+    ports:
+      - "8091:8091"
+    volumes:
+      - ./models:/app/models
+      - D:/QMD-Wiki-Hermes/data:/app/data
+      - C:/Users/user/Documents/Obsidian Vault/QMD-Knowledge:/obsidian/general-knowledge
+      - C:/Users/user/AppData/Local/hermes/obsidian-vaults/su-family-farm:/obsidian/su-family-farm
+      - D:/景观与高尔夫规划设计施工/努山塔拉高爾夫造鎮計畫:/obsidian/nusantara-township
+    environment:
+      - PYTHONUNBUFFERED=1
+      # Proxy target: the host-native QMD-Index, not a container. The 9p-mounted
+      # DB is unreadable from inside a container, so proxying to qmd-webui:8090
+      # returned the container's "disk I/O error" traceback to every caller.
+      - QMD_API_BASE=http://host.docker.internal:8090
+      - QMD_DB_PATH=/app/models/qmd/index.sqlite
+      # Auxiliary stores: keep them on the mounted data dir so the container can
+      # actually open them (the Windows defaults are not visible in here).
+      - CONTRADICTION_DB=/app/data/contradictions.db
+      - EVOLUTION_DB=/app/data/evolution.db
+      - QMD_WEBUI_PORT=8091
+      - OBSIDIAN_VAULT=/obsidian/general-knowledge
+      - LLM_URL=http://host.docker.internal:1235/v1
+      - LLM_MODEL=qwen/qwen3.8-27b
+      - LLM_KEY=
+      - TRANSLATE_URL=http://host.docker.internal:8030/v1
+      - TRANSLATE_MODEL=hy-mt2:1.8b
+      - TRANSLATE_ENABLED=true
+      - TRANSLATE_DEFAULT_TARGET=zh
+      - GPU_WEBUI_URL=http://host.docker.internal:8000
+      - RAGFLOW_API_BASE=http://host.docker.internal:9393
+      - RAGFLOW_API_KEY=${RAGFLOW_API_KEY}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+

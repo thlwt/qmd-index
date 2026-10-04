@@ -23,6 +23,7 @@ node_modules/
 .DS_Store
 Thumbs.db
 Desktop.ini
+nul
 
 # === IDE ===
 .vscode/
@@ -38,3 +39,7 @@ webui/static/null
 # === Environment ===
 .env
 .env.local
+
+# === Backups ===
+*.bak-*
+*.bak2-*
