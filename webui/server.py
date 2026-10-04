@@ -501,8 +501,8 @@ def api_search_vector():
         return jsonify({"error": "Cannot find index database"}), 500
 
     try:
-        embed_url = SETTINGS.get("embedding_url", "http://127.0.0.1:1278/v1/embeddings")
-        embed_model = SETTINGS.get("embedding_model", "embed-gemma:300m")
+        embed_url = SETTINGS.get("embedding_url", "http://127.0.0.1:8025/v1/embeddings")
+        embed_model = SETTINGS.get("embedding_model", "embeddinggemma-300M-Q8_0")
         payload = json.dumps({"input": query, "model": embed_model}).encode("utf-8")
         req = urllib.request.Request(
             embed_url, data=payload,
@@ -1193,8 +1193,8 @@ def api_reindex_document(doc_id):
                     chunks = _chunk_text(doc_text, 512)
                     batch_texts = [c[2] for c in chunks]
 
-                    embed_url = SETTINGS.get("embedding_url", "http://127.0.0.1:1278/v1/embeddings")
-                    embed_model = SETTINGS.get("embedding_model", "embed-gemma:300m")
+                    embed_url = SETTINGS.get("embedding_url", "http://127.0.0.1:8025/v1/embeddings")
+                    embed_model = SETTINGS.get("embedding_model", "embeddinggemma-300M-Q8_0")
                     now = datetime.now(timezone.utc).isoformat()
 
                     conn2.enable_load_extension(True)
@@ -2013,7 +2013,7 @@ def _call_query_expansion_llm(query: str, intent: str, max_count: int) -> list:
         return []
     base = SETTINGS.get("query_expansion_url", "").rstrip("/")
     url = base + "/completions"
-    model = SETTINGS.get("query_expansion_model", "qmd-query-expansion-1.7B-q4_k_m.gguf")
+    model = SETTINGS.get("query_expansion_model", "hf_tobil_qmd-query-expansion-1.7B-q4_k_m.gguf")
     if not url.startswith("http"):
         return []
 
@@ -2163,8 +2163,8 @@ def api_upload():
                     if os.path.exists(vec0_dll):
                         embed_conn.load_extension(vec0_dll)
 
-                    embed_url = SETTINGS.get("embedding_url", "http://127.0.0.1:1278/v1/embeddings")
-                    embed_model = SETTINGS.get("embedding_model", "embed-gemma:300m")
+                    embed_url = SETTINGS.get("embedding_url", "http://127.0.0.1:8025/v1/embeddings")
+                    embed_model = SETTINGS.get("embedding_model", "embeddinggemma-300M-Q8_0")
                     now = datetime.now(timezone.utc).isoformat()
 
                     for res in results:
@@ -2251,17 +2251,17 @@ def api_upload():
 SETTINGS_PATH = Path(__file__).resolve().parent / "settings.json"
 
 DEFAULT_SETTINGS = {
-    "embedding_url": "http://127.0.0.1:2780/v1/embeddings",
-    "embedding_model": "embed-gemma:300m",
+    "embedding_url": "http://127.0.0.1:8025/v1/embeddings",
+    "embedding_model": "embeddinggemma-300M-Q8_0",
     "embedding_dim": 768,
-    "reranker_url": "http://127.0.0.1:2781/v1/rerank",
-    "reranker_model": "qwen3-reranker-0.6b-q8_0.gguf",
-    "llm_url": "http://localhost:1234/v1",
-    "llm_model": "Qwen3.5-9B",
+    "reranker_url": "http://127.0.0.1:8024/v1/rerank",
+    "reranker_model": "Qwen.Qwen3-Reranker-0.6B.Q8_0.gguf",
+    "llm_url": "http://localhost:1235/v1",
+    "llm_model": "qwen/qwen3.8-27b",
     "llm_key": "",
     "llm_ctx": 32768,
-    "query_expansion_url": "http://query-expansion:2782/v1",
-    "query_expansion_model": "qmd-query-expansion-1.7B-q4_k_m.gguf",
+    "query_expansion_url": "http://127.0.0.1:8026/v1",
+    "query_expansion_model": "hf_tobil_qmd-query-expansion-1.7B-q4_k_m.gguf",
 }
 
 def load_settings():
